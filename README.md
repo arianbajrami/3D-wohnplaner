@@ -1,4 +1,4 @@
-# wohnraum-3d
+# 3D-Wohnplaner
 
 Eine App, mit der man eine Wohnung aus ihrem Grundriss in 3D aufbaut und sie dann
 virtuell einrichtet: Möbel stellen, Wände streichen, Böden tauschen, Varianten vergleichen –
