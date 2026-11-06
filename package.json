@@ -14,7 +14,8 @@
     "dev:lan": "npm run dev -w apps/web -- --host",
     "build": "npm run build -w apps/web",
     "test": "vitest run",
-    "typecheck": "tsc -p packages/model && tsc -p apps/web"
+    "typecheck": "tsc -p packages/model && tsc -p apps/web",
+    "e2e": "npm run e2e -w apps/web"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

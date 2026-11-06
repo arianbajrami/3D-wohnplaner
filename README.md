@@ -217,6 +217,22 @@ npm test
 npm run typecheck
 ```
 
+```bash
+npm run e2e
+```
+
+`npm run e2e` startet die App selbst und klickt sie im Browser einmal durch (Playwright). Beim ersten Mal
+vorher die Browser installieren mit `npx playwright install chromium` (im Ordner `apps/web`).
+
+**CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Push auf `main` und bei jedem
+Pull Request:
+
+- **Typen, Tests, Build:** Typecheck, Unit-Tests und Produktions-Build. Die Tests prüfen auch alle Dateien
+  in `plans/` und `designs/`. Eine kaputte oder falsch abgelegte Variante, z. B. nach „Synchronisieren“, fällt
+  also sofort auf.
+- **End-to-End:** Die App wird im Browser durchgespielt: Raum gestalten, Möbel hinzufügen, Variante
+  speichern, Wohnung isolieren, vergleichen, 3D und Begehen.
+
 ## Struktur
 
 ```
