@@ -326,7 +326,7 @@ export function FurniturePanel(props: StoreProps & { f: Furniture; onSelect: (s:
           Löschen (Entf)
         </button>
       </div>
-      <p className="muted small">Im 2D-Plan verschieben. Taste R dreht um 90°. Die dicke Linie markiert die Vorderseite.</p>
+      <p className="muted small">Im 2D-Plan oder in 3D ziehen, um es zu verschieben (rastet an Wänden ein). Taste R dreht um 90°. Im 2D-Plan markiert die dicke Linie die Vorderseite.</p>
     </div>
   );
 }

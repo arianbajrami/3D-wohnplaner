@@ -2,6 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   apartmentAreaChecks,
+  applyVariant,
+  compareDesigns,
+  extractDesign,
+  sameDesign,
+  slugify,
+  stripDesign,
   applyHomography,
   homography,
   parsePlan,
@@ -90,5 +96,40 @@ describe("Migration", () => {
     const p = parsePlan(v1);
     expect(p.schemaVersion).toBe(2);
     expect(p.furniture[0]!.finishes).toEqual({ main: "#ff0000" });
+  });
+});
+
+describe("Varianten", () => {
+  const designed = {
+    ...plan,
+    rooms: plan.rooms.map((r) => (r.id === "r-ost-3" ? { ...r, finishes: { floor: "eiche-natur", walls: "#e9e0d2", style: "landhaus" } } : r)),
+    walls: plan.walls.map((w) => (w.id === "iw-1" ? { ...w, finishes: { left: "#8a9977" } } : w)),
+    furniture: [{ id: "k1", type: "kuechen-unterschrank", x: 9, y: 0.78, rotation: 0, elevation: 0, width: 2.4, depth: 0.6, height: 0.9, finishes: { front: "#ffffff" } }],
+  };
+
+  it("trennt Gestaltung und Grundriss verlustfrei", () => {
+    const design = extractDesign(designed);
+    expect(Object.keys(design.rooms)).toEqual(["r-ost-3"]);
+    expect(Object.keys(design.walls)).toEqual(["iw-1"]);
+    const roundtrip = applyVariant(stripDesign(designed), design);
+    expect(sameDesign(extractDesign(roundtrip), design)).toBe(true);
+    expect(stripDesign(roundtrip)).toEqual(stripDesign(designed));
+    // eine gespeicherte Variante (mit Metadaten) gilt als gleich, wenn die Gestaltung gleich ist
+    expect(sameDesign(extractDesign(designed), { ...design, schemaVersion: 1, id: "x", name: "X" } as typeof design)).toBe(true);
+  });
+
+  it("vergleicht zwei Varianten Raum für Raum", () => {
+    const diff = compareDesigns(plan, plan, designed);
+    const kitchen = diff.find((d) => d.roomId === "r-ost-3")!;
+    expect(kitchen.differs).toBe(true);
+    expect(kitchen.floor).toEqual([undefined, "eiche-natur"]);
+    expect(kitchen.furniture[1]).toEqual(["kuechen-unterschrank"]);
+    expect(diff.find((d) => d.roomId === "r-ost-1")!.accentWalls).toEqual([0, 1]);
+    expect(diff.find((d) => d.roomId === "r-west-5")!.differs).toBe(false);
+  });
+
+  it("macht aus Namen Dateinamen", () => {
+    expect(slugify("Küche Landhaus")).toBe("kueche-landhaus");
+    expect(slugify("  Wohnzimmer – Größer!  ")).toBe("wohnzimmer-groesser");
   });
 });

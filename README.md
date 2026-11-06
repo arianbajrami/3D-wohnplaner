@@ -100,7 +100,8 @@ Die angegebenen m²-Werte dienen als Kontrolle für die erkannten Raumpolygone.
 - [x] Referenzfall 1. OG als Modell erfasst: [`plans/1og.json`](plans/1og.json)
 - [ ] Türanschläge (Öffnungsrichtung) im Modell nachtragen
 - [x] Möbel platzieren, Wandfarben (RAL), Bodenbeläge, Stilvorlagen (erste Version)
-- [ ] Varianten speichern und vergleichen
+- [x] Varianten speichern, synchronisieren und vergleichen
+- [x] Möbel in 3D verschieben, durch die Wohnung laufen
 - [ ] Stil per Freitext („Landhausküche mit …“) über Claude
 - [ ] Detailliertere Möbelmodelle (glTF) zusätzlich zu den parametrischen
 
@@ -153,22 +154,58 @@ git pull
 npm install
 ```
 
+**Speichern und gemeinsam planen**
+
+Beim ersten Start fragt die App, wer gerade plant (Arian oder Leni). Danach:
+
+- **Speichern** (Strg/Cmd+S) schreibt die aktuelle Variante als Datei ins Repo:
+  `designs/1og/<person>/<variante>.json`. Änderungen am Grundriss landen in `plans/1og.json`.
+- **Speichern als …** legt eine neue Variante an, z. B. „Küche Landhaus“ oder „Küche Modern“.
+- **⇅ Synchronisieren** lädt die eigenen Varianten zu GitHub hoch und holt die der anderen Person.
+  Dahinter stecken `git commit`, `pull` und `push`, nur für `plans/` und `designs/`.
+- Varianten der anderen Person kann man öffnen, ansehen und als **eigene Kopie** weiterbearbeiten.
+  Überschrieben wird nichts.
+- **Vergleichen** zeigt zwei Varianten nebeneinander (2D oder 3D) und listet Raum für Raum die
+  Unterschiede auf.
+
+Warum ein gemeinsamer Branch mit Ordnern pro Person statt zwei Branches: siehe
+[ADR 0002](docs/adr/0002-speichern-varianten-sync.md).
+
+**Einrichtung für eine zweite Person (z. B. Leni)**
+
+1. Auf GitHub unter *Settings → Collaborators* einladen.
+2. Node.js und Git installieren, dann wie oben klonen und `npm install` ausführen.
+   Das Repo dabei **nicht** in einen OneDrive- oder iCloud-Ordner legen.
+3. Einmalig den Namen für die Commits setzen:
+
+   ```bash
+   git config user.name "Leni"
+   ```
+
+   ```bash
+   git config user.email "leni@example.com"
+   ```
+
+4. `npm run dev` starten, im Browser „Leni“ wählen und mit „⇅ Synchronisieren“ den neuesten Stand holen.
+
 **Was die App kann (Stand jetzt)**
 
 - **Ansicht:** ganzes Geschoss, eine Wohnung oder ein einzelner Raum. Doppelklick auf einen Raum zeigt nur
   diesen. Alles andere wird ausgeblendet, auch das Treppenhaus.
 - **Einrichten:** Raum anklicken, dann im Katalog Möbel hinzufügen (Wohnen, Essen, Küche, Schlafen, Bad,
-  Arbeiten). Im 2D-Plan verschieben, Möbel rasten an Wänden ein. Taste R dreht, Entf löscht. Maße in cm und
+  Arbeiten). Im 2D-Plan oder in 3D verschieben, Möbel rasten an Wänden ein. Taste R dreht, Entf löscht. Maße in cm und
   alle Oberflächen (Fronten, Arbeitsplatte, Bezug, Holz …) sind pro Möbel einstellbar.
 - **Gestalten:** Boden je Raum (Holz hell/dunkel, Fliesen, Stein, Teppich), Wandfarbe je Raum (RAL oder
   eigene Farbe), einzelne Akzentwände in 3D mit „Wand streichen“.
 - **Stilvorlagen:** Landhaus, Skandinavisch, Modern und Industrial setzen Wände, Boden und alle
   Möbeloberflächen eines Raums auf einmal, z. B. Landhausküche mit weißen Fronten und Holz-Arbeitsplatte.
 - **3D-Ansicht:** optional als Puppenhaus mit abgeschnittenen Wänden.
+- **🚶 Begehen:** durch die Wohnung laufen, in Augenhöhe. W/S bzw. ↑/↓ gehen, A/D seitwärts, ←/→ drehen,
+  Maus ziehen schaut sich um. Auf Tablets gibt es ein Steuerkreuz. Wände und hohe Möbel halten auf.
 - **Grundriss korrigieren:** Wände, Raumecken und die Lage des Originalfotos per Ziehen anpassen, mit
   Rückgängig (Strg/Cmd+Z). Dazu eine Flächenkontrolle gegen die Plan-Werte.
-- **Speichern:** Der Browser merkt sich alles. Mit „Exportieren“ entsteht eine JSON-Datei. Um einen Stand
-  dauerhaft zu übernehmen, diese Datei nach `plans/` legen und committen.
+- **Entwurf:** Der Browser sichert den Arbeitsstand laufend. Ein Neuladen verliert also nichts, auch
+  wenn noch nicht gespeichert ist.
 
 **Für Entwickler**
 
@@ -186,6 +223,7 @@ npm run typecheck
 apps/web/        Web-App (React + Vite): 2D-Editor, 3D-Szene (three.js)
 packages/model/  Grundriss-Modell: Schema (zod), Geometrie, Flächen, Homographie, Prüfungen
 plans/           Grundriss-Modelle als JSON (Single Source of Truth)
+designs/         Varianten (Gestaltung) je Grundriss und Person
 samples/         Original-Grundrisse (Fotos) als Import-Quelle und Hintergrund-Referenz
 docs/adr/        Architekturentscheidungen
 ```
