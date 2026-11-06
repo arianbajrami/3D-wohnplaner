@@ -1,0 +1,24 @@
+{
+  "name": "3d-wohnplaner",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "npm run dev -w apps/web",
+    "dev:lan": "npm run dev -w apps/web -- --host",
+    "build": "npm run build -w apps/web",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/model && tsc -p apps/web"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  }
+}

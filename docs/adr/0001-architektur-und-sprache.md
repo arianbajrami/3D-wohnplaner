@@ -1,6 +1,6 @@
 # ADR 0001: Architektur, Plattform und Programmiersprache
 
-- Status: vorgeschlagen
+- Status: angenommen
 - Datum: 2026-11-06
 
 ## Kontext
@@ -30,7 +30,8 @@ packages/
 plans/         Grundriss-Modelle als JSON (versioniert in Git)
 ```
 
-Einen eigenen Python-Dienst gibt es vorerst nicht (siehe Import).
+Einen eigenen Python-Dienst gibt es vorerst nicht (siehe Import). Paketverwaltung: npm workspaces.
+Damit braucht man lokal nur Node.js und kein zusätzliches Werkzeug wie pnpm.
 
 ### Modell
 
@@ -51,7 +52,7 @@ Klassische CV (OpenCV) kommt erst dazu, wenn Claude allein nicht präzise genug 
 
 ### Speichern und Teilen
 
-- Stufe 1: lokal im Browser (IndexedDB) plus JSON-Export/-Import. Pläne leben zusätzlich in Git.
+- Stufe 1: lokal im Browser plus JSON-Export/-Import. Pläne leben zusätzlich in Git. Die App läuft auf `localhost` (`npm run dev`).
 - Stufe 2 (wenn beide parallel planen wollen): ein gemeinsamer Speicher, z. B. S3-Bucket + Lambda mit einem geteilten Geheimnis. Einfache Konfliktregel: letzte Änderung pro Variante gewinnt.
 
 ### Hosting

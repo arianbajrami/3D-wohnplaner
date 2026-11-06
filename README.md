@@ -83,22 +83,101 @@ Aus dem Plan in `samples/`:
 - Gesamt 1. OG: **169,6 m²**
 - Raumflächen zwischen 6,3 m² und 25,4 m², Maßketten außen und innen vorhanden
 
+Zuordnung (im Foto): **Wohnung Ost** ist die linke Hälfte mit 7 Räumen (Zimmer 20,7 / 14,7 / 19,7 / 9,6 / 19,
+Flur 11 und Raum 6,7), **Wohnung West** die rechte Hälfte mit 5 Räumen (Zimmer 20,7 / 7,3 / 25,4, Flur 8,5 und Raum 6,3).
+Dazwischen liegt das Treppenhaus (6,93 m lang), das zu keiner Wohnung zählt. Das Modell liegt in
+[`plans/1og.json`](plans/1og.json) und trifft alle Plan-Flächen auf unter 2 %.
+
 Das Foto ist absichtlich ein guter Härtetest: schräg aufgenommen, Schattenwurf,
 Papier nicht plan. Wenn der Import damit klarkommt, kommt er mit sauberen Scans erst recht klar.
 Die angegebenen m²-Werte dienen als Kontrolle für die erkannten Raumpolygone.
 
 ## Offene Punkte
 
-- [ ] Technische Architektur (Plattform, 3D-Engine, Erkennungs-Pipeline) – wird separat diskutiert
-- [ ] Format des Grundriss-Modells festlegen (Schema + Versionierung)
-- [ ] Erkennungsansatz für Fotos: klassisches CV, ML-Modell, Vision-LLM oder Mischung
-- [ ] Wo läuft die App: Web, Mobile, Tablet, AR?
-- [ ] Woher kommen Möbelmodelle und Farbpaletten?
-- [ ] Referenzfall 1. OG einmal manuell als Modell erfassen (Ground Truth für den Import)
+- [x] Technische Architektur → [ADR 0001](docs/adr/0001-architektur-und-sprache.md): Web-App, TypeScript, three.js
+- [x] Format des Grundriss-Modells: Schema v1 in [`packages/model`](packages/model/src/schema.ts)
+- [x] Erkennungsansatz für Fotos: Claude als Vision-Modell (vorerst direkt über Claude Code)
+- [x] Referenzfall 1. OG als Modell erfasst: [`plans/1og.json`](plans/1og.json)
+- [ ] Türanschläge (Öffnungsrichtung) im Modell nachtragen
+- [ ] Möbel platzieren, Wandfarben (RAL), Bodenbeläge
+- [ ] Varianten speichern und vergleichen
+- [ ] Woher kommen Möbelmodelle?
+
+## Lokal starten
+
+Die App läuft vorerst nur auf dem eigenen Rechner unter `localhost`. Es gibt keinen Server und kein Konto.
+Änderungen speichert der Browser.
+
+**Einmalig einrichten**
+
+1. [Node.js](https://nodejs.org/) in der LTS-Version installieren (mindestens 20.19 oder 22.12).
+   Prüfen mit `node -v`.
+2. [Git](https://git-scm.com/) installieren, falls noch nicht vorhanden. Unter macOS ist es meist schon da.
+3. Das Repo klonen. Es ist privat, deshalb fragt Git nach dem GitHub-Login. Statt des Passworts gibt man ein
+   [Personal Access Token](https://github.com/settings/tokens) ein. Einfacher geht es mit
+   [GitHub Desktop](https://desktop.github.com/) (*File → Clone repository*) oder der GitHub CLI (`gh auth login`).
+
+   ```bash
+   git clone https://github.com/arianbajrami/3D-wohnplaner.git
+   ```
+
+   ```bash
+   cd 3D-wohnplaner
+   ```
+
+4. Abhängigkeiten installieren:
+
+   ```bash
+   npm install
+   ```
+
+**Starten**
+
+```bash
+npm run dev
+```
+
+Dann im Browser <http://localhost:5173> öffnen. Beenden mit `Strg+C` im Terminal.
+
+Auf einem anderen Gerät im selben WLAN, z. B. Tablet oder Handy, startet man stattdessen mit
+`npm run dev:lan`. Vite zeigt dann eine Adresse wie `http://192.168.x.y:5173` an.
+
+**Aktualisieren** (neue Version holen)
+
+```bash
+git pull
+```
+
+```bash
+npm install
+```
+
+**Was die App kann (Stand jetzt)**
+
+- 2D-Plan mit dem entzerrten Originalfoto darunter (Deckkraft regelbar) und einer Flächenkontrolle
+  gegen die Plan-Werte
+- Wände, Raumecken und die Foto-Ausrichtung per Ziehen korrigieren, mit Rückgängig
+- Räume umbenennen und einer Wohnung zuordnen
+- 3D-Ansicht aus dem Modell, optional als Puppenhaus mit abgeschnittenen Wänden, Fokus auf eine Wohnung
+- Export/Import als JSON. Um Korrekturen dauerhaft zu übernehmen, die exportierte Datei nach `plans/` legen
+  und committen.
+
+**Für Entwickler**
+
+```bash
+npm test
+```
+
+```bash
+npm run typecheck
+```
 
 ## Struktur
 
 ```
-docs/      Konzepte, Architekturentscheidungen (folgt)
-samples/   Beispiel-Grundrisse zum Testen des Imports
+apps/web/        Web-App (React + Vite): 2D-Editor, 3D-Szene (three.js)
+packages/model/  Grundriss-Modell: Schema (zod), Geometrie, Flächen, Homographie, Prüfungen
+plans/           Grundriss-Modelle als JSON (Single Source of Truth)
+samples/         Original-Grundrisse (Fotos) als Import-Quelle und Hintergrund-Referenz
+docs/adr/        Architekturentscheidungen
 ```
