@@ -10,10 +10,27 @@ export interface Issue {
  * Hebt ältere Modell-Versionen auf die aktuelle an.
  * Jede künftige Version bekommt hier eine reine Funktion vN → vN+1.
  */
+const migrations: Record<number, (plan: any) => any> = {
+  // v1 → v2: Möbel hatten nur "color", jetzt Oberflächen je Rolle; Raum "floor" wird zu finishes.floor
+  1: (p) => ({
+    ...p,
+    schemaVersion: 2,
+    rooms: (p.rooms ?? []).map(({ floor, ...r }: any) => (floor ? { ...r, finishes: { ...r.finishes, floor } } : r)),
+    furniture: (p.furniture ?? []).map(({ color, ...f }: any) => ({ ...f, finishes: color ? { main: color } : {} })),
+  }),
+};
+
 export function migrate(raw: unknown): unknown {
-  const v = (raw as { schemaVersion?: unknown } | null)?.schemaVersion;
-  if (v === SCHEMA_VERSION) return raw;
-  throw new Error(`Unbekannte schemaVersion: ${String(v)} (unterstützt: ${SCHEMA_VERSION})`);
+  let plan = raw as any;
+  let v = plan?.schemaVersion;
+  while (typeof v === "number" && v < SCHEMA_VERSION) {
+    const step = migrations[v];
+    if (!step) break;
+    plan = step(plan);
+    v = plan.schemaVersion;
+  }
+  if (v !== SCHEMA_VERSION) throw new Error(`Unbekannte schemaVersion: ${String(v)} (unterstützt: bis ${SCHEMA_VERSION})`);
+  return plan;
 }
 
 /** Liest ein Modell aus beliebigem JSON: migrieren, Schema prüfen. Wirft bei Schemafehlern. */
@@ -63,5 +80,6 @@ export function validatePlan(plan: Plan): Issue[] {
     }
   }
   for (const o of plan.openings) if (!wallIds.has(o.wall)) err(`Öffnung ${o.id}: unbekannte Wand ${o.wall}`);
+  unique("Möbel", plan.furniture.map((f) => f.id));
   return issues;
 }

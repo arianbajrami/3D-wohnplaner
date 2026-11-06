@@ -1,12 +1,17 @@
 import {
+  bounds,
   homography,
   multiply,
+  pointInPolygon,
   roomArea,
+  roomAt,
   roomLabelPoint,
   toCssMatrix3d,
+  visibility,
   wallGeometry,
   wallOpenings,
   wallOutline,
+  type Furniture,
   type Mat3,
   type Opening,
   type Plan,
@@ -14,9 +19,12 @@ import {
   type WallGeometry,
 } from "@wohnplaner/model";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FURNITURE_BY_ID, furnitureParts, ROLES } from "./catalog/furniture";
+import { resolveFinish } from "./catalog/materials";
 import { apartmentColor, fmtArea } from "./format";
+import { isFurniture, isRoom, type Selection } from "./selection";
 
-export type EditMode = "view" | "walls" | "rooms" | "photo";
+export type EditMode = "furnish" | "walls" | "rooms" | "photo";
 
 interface Props {
   plan: Plan;
@@ -27,8 +35,9 @@ interface Props {
   showPhoto: boolean;
   photoOpacity: number;
   focus: string;
-  selectedRoom?: string;
-  onSelectRoom: (id: string | undefined) => void;
+  selection: Selection;
+  onSelect: (s: Selection) => void;
+  onFocusRoom: (roomId: string) => void;
 }
 
 interface View {
@@ -41,20 +50,26 @@ type Drag =
   | { kind: "pan"; x0: number; y0: number; tx0: number; ty0: number }
   | { kind: "node"; id: string }
   | { kind: "roomVertex"; roomId: string; poly: number; vertex: number }
-  | { kind: "calib"; index: number };
+  | { kind: "calib"; index: number }
+  | { kind: "furniture"; id: string; dx: number; dy: number };
 
 const SNAP_PX = 7;
 const round = (v: number, step = 0.01) => Math.round(v / step) * step;
 const pts = (p: Point[]) => p.map(([x, y]) => `${x},${y}`).join(" ");
 
 export function Plan2D(props: Props) {
-  const { plan, setPlan, checkpoint, mode, focus } = props;
+  const { plan, setPlan, checkpoint, mode, focus, selection } = props;
   const wrap = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [view, setView] = useState<View>({ s: 40, tx: 20, ty: 20 });
   const drag = useRef<Drag | null>(null);
 
-  const geoms = useMemo(() => plan.walls.map((w) => wallGeometry(plan, w)), [plan]);
+  const vis = useMemo(() => visibility(plan, focus), [plan, focus]);
+  const rooms = plan.rooms.filter((r) => vis.rooms.has(r.id));
+  const geoms = useMemo(() => plan.walls.filter((w) => vis.walls.has(w.id)).map((w) => wallGeometry(plan, w)), [plan, vis]);
+  const furniture = plan.furniture.filter(
+    (f) => rooms.length === plan.rooms.length || rooms.some((r) => r.polygons.some((p) => pointInPolygon([f.x, f.y], p))),
+  );
 
   // Größe des Zeichenbereichs verfolgen
   useLayoutEffect(() => {
@@ -66,24 +81,25 @@ export function Plan2D(props: Props) {
     return () => ro.disconnect();
   }, []);
 
+  /** Ansicht auf die sichtbaren Räume einpassen */
   const fit = useCallback(() => {
-    if (!plan.nodes.length) return;
-    const xs = plan.nodes.map((n) => n.x), ys = plan.nodes.map((n) => n.y);
-    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-    const m = 40;
+    const p: Point[] = rooms.length ? rooms.flatMap((r) => r.polygons.flat()) : plan.nodes.map((n) => [n.x, n.y]);
+    if (!p.length) return;
+    const [x0, y0, x1, y1] = bounds(p);
+    const m = 50;
     const s = Math.min((size.w - 2 * m) / (x1 - x0 || 1), (size.h - 2 * m) / (y1 - y0 || 1));
     setView({ s, tx: (size.w - s * (x0 + x1)) / 2, ty: (size.h - s * (y0 + y1)) / 2 });
-  }, [plan.nodes, size]);
+  }, [rooms, plan.nodes, size]);
 
-  // beim ersten Anzeigen und bei Größenänderung einpassen
+  // beim ersten Anzeigen, bei Größenänderung und bei Fokuswechsel einpassen
   const fitted = useRef("");
   useEffect(() => {
-    const key = `${plan.meta.name}|${size.w}x${size.h}`;
+    const key = `${plan.meta.name}|${focus}|${size.w}x${size.h}`;
     if (fitted.current !== key && size.w > 0) {
       fitted.current = key;
       fit();
     }
-  }, [fit, plan.meta.name, size]);
+  }, [fit, plan.meta.name, focus, size]);
 
   // Mausrad-Zoom um den Cursor
   useEffect(() => {
@@ -103,7 +119,7 @@ export function Plan2D(props: Props) {
   const zoomBy = (f: number) =>
     setView((v) => ({ s: v.s * f, tx: size.w / 2 - (size.w / 2 - v.tx) * f, ty: size.h / 2 - (size.h / 2 - v.ty) * f }));
 
-  const toModel = (e: React.PointerEvent): Point => {
+  const toModel = (e: { clientX: number; clientY: number }): Point => {
     const r = wrap.current!.getBoundingClientRect();
     return [(e.clientX - r.left - view.tx) / view.s, (e.clientY - r.top - view.ty) / view.s];
   };
@@ -134,7 +150,12 @@ export function Plan2D(props: Props) {
       return;
     }
     const m = toModel(e);
-    if (d.kind === "node") {
+    if (d.kind === "furniture") {
+      const f = plan.furniture.find((x) => x.id === d.id);
+      if (!f) return;
+      const [x, y] = snapToWalls(geoms, { ...f, x: m[0] - d.dx, y: m[1] - d.dy }, (SNAP_PX * 2) / view.s);
+      setPlan({ ...plan, furniture: plan.furniture.map((q) => (q.id === d.id ? { ...q, x: round(x), y: round(y) } : q)) }, false);
+    } else if (d.kind === "node") {
       const others = plan.nodes.filter((n) => n.id !== d.id).map((n) => [n.x, n.y] as Point);
       const [x, y] = snap(m, others);
       setPlan({ ...plan, nodes: plan.nodes.map((n) => (n.id === d.id ? { ...n, x, y } : n)) }, false);
@@ -142,9 +163,7 @@ export function Plan2D(props: Props) {
       const others: Point[] = [
         ...plan.nodes.map((n) => [n.x, n.y] as Point),
         ...plan.rooms.flatMap((r) =>
-          r.polygons.flatMap((poly, pi) =>
-            poly.filter((_, vi) => !(r.id === d.roomId && pi === d.poly && vi === d.vertex)),
-          ),
+          r.polygons.flatMap((poly, pi) => poly.filter((_, vi) => !(r.id === d.roomId && pi === d.poly && vi === d.vertex))),
         ),
       ];
       const p = snap(m, others);
@@ -154,12 +173,7 @@ export function Plan2D(props: Props) {
           rooms: plan.rooms.map((r) =>
             r.id !== d.roomId
               ? r
-              : {
-                  ...r,
-                  polygons: r.polygons.map((poly, pi) =>
-                    pi !== d.poly ? poly : poly.map((q, vi) => (vi === d.vertex ? p : q)),
-                  ),
-                },
+              : { ...r, polygons: r.polygons.map((poly, pi) => (pi !== d.poly ? poly : poly.map((q, vi) => (vi === d.vertex ? p : q)))) },
           ),
         },
         false,
@@ -173,10 +187,7 @@ export function Plan2D(props: Props) {
           ...plan,
           meta: {
             ...plan.meta,
-            source: {
-              ...plan.meta.source!,
-              calibration: { ...cal, modelPoints: cal.modelPoints.map((q, i) => (i === d.index ? p : q)) },
-            },
+            source: { ...plan.meta.source!, calibration: { ...cal, modelPoints: cal.modelPoints.map((q, i) => (i === d.index ? p : q)) } },
           },
         },
         false,
@@ -198,7 +209,7 @@ export function Plan2D(props: Props) {
   const viewMat: Mat3 = [view.s, 0, view.tx, 0, view.s, view.ty, 0, 0, 1];
 
   const px = 1 / view.s; // ein Bildschirmpixel in Metern
-  const dimmed = (apt?: string) => focus !== "all" && apt !== focus;
+  const showRoomLabels = mode !== "furnish" || plan.furniture.length === 0 || view.s > 25;
 
   return (
     <div
@@ -206,9 +217,15 @@ export function Plan2D(props: Props) {
       className={`plan2d mode-${mode}`}
       onPointerDown={(e) => {
         startDrag(e, { kind: "pan", x0: e.clientX, y0: e.clientY, tx0: view.tx, ty0: view.ty });
-        if (mode === "view") props.onSelectRoom(undefined);
+        if (mode === "furnish") props.onSelect(undefined);
       }}
       onPointerMove={onPointerMove}
+      onDoubleClick={(e) => {
+        // Doppelklick auf einen Raum zeigt nur diesen Raum
+        if (mode !== "furnish") return;
+        const r = roomAt(plan, toModel(e));
+        if (r) props.onFocusRoom(r.id);
+      }}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
     >
@@ -228,25 +245,26 @@ export function Plan2D(props: Props) {
       )}
       <svg width={size.w} height={size.h}>
         <g transform={`translate(${view.tx},${view.ty}) scale(${view.s})`}>
-          {/* Räume */}
-          {plan.rooms.map((r) => {
-            const color = apartmentColor(r.apartment);
-            const sel = r.id === props.selectedRoom;
+          {/* Räume: Bodenfarbe, sonst Farbe der Wohnung */}
+          {rooms.map((r) => {
+            const floor = r.finishes?.floor ? resolveFinish(r.finishes.floor).color : apartmentColor(r.apartment);
+            const sel = isRoom(selection, r.id);
             return (
-              <g key={r.id} opacity={dimmed(r.apartment) ? 0.25 : 1}>
+              <g key={r.id}>
                 {r.polygons.map((poly, i) => (
                   <polygon
                     key={i}
                     points={pts(poly)}
-                    fill={color}
-                    fillOpacity={props.showPhoto ? 0.35 : 0.55}
+                    fill={floor}
+                    fillOpacity={props.showPhoto ? 0.4 : r.finishes?.floor ? 0.85 : 0.55}
                     stroke={sel ? "var(--accent)" : "none"}
                     strokeWidth={sel ? 3 * px : 0}
                     className="room-poly"
                     onPointerDown={(e) => {
-                      if (mode !== "view") return;
+                      if (mode !== "furnish") return;
                       e.stopPropagation();
-                      props.onSelectRoom(r.id);
+                      props.onSelect({ kind: "room", id: r.id });
+                      startDrag(e, { kind: "pan", x0: e.clientX, y0: e.clientY, tx0: view.tx, ty0: view.ty });
                     }}
                   />
                 ))}
@@ -260,21 +278,39 @@ export function Plan2D(props: Props) {
           ))}
           {geoms.flatMap((g) => wallOpenings(plan, g.wall.id).map((o) => <OpeningMark key={o.id} g={g} o={o} px={px} />))}
 
+          {/* Möbel */}
+          {furniture.map((f) => (
+            <FurnitureMark
+              key={f.id}
+              f={f}
+              px={px}
+              selected={isFurniture(selection, f.id)}
+              interactive={mode === "furnish"}
+              onPointerDown={(e) => {
+                if (mode !== "furnish") return;
+                props.onSelect({ kind: "furniture", id: f.id });
+                const m = toModel(e);
+                startDrag(e, { kind: "furniture", id: f.id, dx: m[0] - f.x, dy: m[1] - f.y });
+              }}
+            />
+          ))}
+
           {/* Raumbeschriftung */}
-          {plan.rooms.map((r) => {
-            const [x, y] = roomLabelPoint(r);
-            const area = roomArea(r);
-            const dev = r.targetArea ? (area - r.targetArea) / r.targetArea : undefined;
-            return (
-              <g key={r.id} className="room-label" opacity={dimmed(r.apartment) ? 0.3 : 1} fontSize={13 * px}>
-                <text x={x} y={y - 8 * px} textAnchor="middle" fontWeight={600}>{r.name}</text>
-                <text x={x} y={y + 8 * px} textAnchor="middle" className={dev !== undefined && Math.abs(dev) > 0.03 ? "warn" : ""}>
-                  {fmtArea(area)}
-                  {r.targetArea ? ` (Plan ${fmtArea(r.targetArea)})` : ""}
-                </text>
-              </g>
-            );
-          })}
+          {showRoomLabels &&
+            rooms.map((r) => {
+              const [x, y] = roomLabelPoint(r);
+              const area = roomArea(r);
+              const dev = r.targetArea ? (area - r.targetArea) / r.targetArea : undefined;
+              return (
+                <g key={r.id} className="room-label" fontSize={13 * px}>
+                  <text x={x} y={y - 8 * px} textAnchor="middle" fontWeight={600}>{r.name}</text>
+                  <text x={x} y={y + 8 * px} textAnchor="middle" className={dev !== undefined && Math.abs(dev) > 0.03 ? "warn" : ""}>
+                    {fmtArea(area)}
+                    {r.targetArea && mode !== "furnish" ? ` (Plan ${fmtArea(r.targetArea)})` : ""}
+                  </text>
+                </g>
+              );
+            })}
 
           {/* Griffe zum Bearbeiten */}
           {mode === "walls" &&
@@ -282,7 +318,7 @@ export function Plan2D(props: Props) {
               <circle key={n.id} cx={n.x} cy={n.y} r={6 * px} className="handle" onPointerDown={(e) => startDrag(e, { kind: "node", id: n.id })} />
             ))}
           {mode === "rooms" &&
-            plan.rooms.flatMap((r) =>
+            rooms.flatMap((r) =>
               r.polygons.flatMap((poly, pi) =>
                 poly.map(([x, y], vi) => (
                   <rect
@@ -313,6 +349,93 @@ export function Plan2D(props: Props) {
       </div>
       <div className="scale-info">{(100 / view.s).toFixed(2).replace(".", ",")} m pro 100 px</div>
     </div>
+  );
+}
+
+/**
+ * Lässt ein Möbel an Wandflächen einrasten: Liegt eine Kante näher als `tol` an einer Wand,
+ * wird sie bündig an die Wand geschoben. Mit zwei Wänden (Ecke) rastet es in beide Richtungen ein.
+ */
+function snapToWalls(geoms: WallGeometry[], f: Furniture, tol: number): Point {
+  let [x, y] = [f.x, f.y];
+  const r = (f.rotation * Math.PI) / 180;
+  const ux: Point = [Math.cos(r), Math.sin(r)], uy: Point = [-Math.sin(r), Math.cos(r)];
+  const snapped: Point[] = [];
+  const candidates = geoms
+    .map((g) => {
+      const rel: Point = [x - g.start[0], y - g.start[1]];
+      const along = rel[0] * g.dir[0] + rel[1] * g.dir[1];
+      const across = rel[0] * g.normal[0] + rel[1] * g.normal[1];
+      // halbe Ausdehnung des gedrehten Möbels senkrecht zur Wand
+      const ext = (Math.abs(g.normal[0] * ux[0] + g.normal[1] * ux[1]) * f.width) / 2 + (Math.abs(g.normal[0] * uy[0] + g.normal[1] * uy[1]) * f.depth) / 2;
+      const target = Math.sign(across || 1) * (g.wall.thickness / 2 + ext);
+      // steckt das Möbel in der Wand (Mitte noch auf der Raumseite), wird es immer herausgeschoben
+      const overlapping = Math.abs(across) < Math.abs(target) && Math.abs(across) > g.wall.thickness / 2;
+      return { g, along, across, target, gap: Math.abs(across - target), overlapping };
+    })
+    .filter((c) => (c.gap < tol || c.overlapping) && c.along > -0.1 && c.along < c.g.length + 0.1)
+    .sort((a, b) => a.gap - b.gap);
+  for (const c of candidates) {
+    // nur eine Wand je Richtung (sonst würden parallele Wände gegeneinander arbeiten)
+    if (snapped.some((n) => Math.abs(n[0] * c.g.normal[0] + n[1] * c.g.normal[1]) > 0.9)) continue;
+    const shift = c.target - c.across;
+    x += c.g.normal[0] * shift;
+    y += c.g.normal[1] * shift;
+    snapped.push(c.g.normal);
+    if (snapped.length === 2) break;
+  }
+  return [x, y];
+}
+
+function FurnitureMark(props: {
+  f: Furniture;
+  px: number;
+  selected: boolean;
+  interactive: boolean;
+  onPointerDown: (e: React.PointerEvent) => void;
+}) {
+  const { f, px } = props;
+  // Teile von unten nach oben zeichnen, damit die Draufsicht stimmt
+  const parts = useMemo(
+    () => furnitureParts(f.type, { w: f.width, d: f.depth, h: f.height }).sort((a, b) => a.z1 - b.z1),
+    [f.type, f.width, f.depth, f.height],
+  );
+  const label = f.name ?? FURNITURE_BY_ID.get(f.type)?.name ?? f.type;
+  const fontSize = Math.min(11 * px, f.depth * 0.3, f.width * 0.18);
+  return (
+    <g
+      transform={`translate(${f.x},${f.y}) rotate(${f.rotation})`}
+      className={`furniture ${props.interactive ? "interactive" : ""} ${props.selected ? "selected" : ""}`}
+      onPointerDown={props.onPointerDown}
+    >
+      {parts.map((p, i) => (
+        <rect
+          key={i}
+          x={p.x0}
+          y={p.y0}
+          width={p.x1 - p.x0}
+          height={p.y1 - p.y0}
+          rx={p.shape === "cylinder" ? (p.x1 - p.x0) / 2 : 0}
+          fill={p.role === "glass" ? "none" : resolveFinish(f.finishes[p.role] ?? ROLES[p.role].default).color}
+          className="furniture-part"
+        />
+      ))}
+      <rect x={-f.width / 2} y={-f.depth / 2} width={f.width} height={f.depth} className="furniture-outline" />
+      {/* Vorderkante markieren */}
+      <line x1={-f.width / 2} y1={f.depth / 2} x2={f.width / 2} y2={f.depth / 2} className="furniture-front" />
+      {fontSize > 4 * px && (
+        <text
+          y={fontSize * 0.35}
+          textAnchor="middle"
+          fontSize={fontSize}
+          className="furniture-label"
+          // Beschriftung nie kopfüber anzeigen
+          transform={f.rotation % 360 > 90 && f.rotation % 360 <= 270 ? "rotate(180)" : undefined}
+        >
+          {label}
+        </text>
+      )}
+    </g>
   );
 }
 

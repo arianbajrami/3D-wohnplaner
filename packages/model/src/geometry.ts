@@ -109,3 +109,67 @@ export function apartmentAreaChecks(plan: Plan): AreaCheck[] {
     return { id: ap.id, name: ap.name, area, target: t, deviation: t ? (area - t) / t : undefined };
   });
 }
+
+/** Punkt-in-Polygon (Strahlverfahren). */
+export function pointInPolygon([x, y]: Point, poly: readonly Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]!, [xj, yj] = poly[j]!;
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+export function roomAt(plan: Plan, p: Point): Room | undefined {
+  return plan.rooms.find((r) => r.polygons.some((poly) => pointInPolygon(p, poly)));
+}
+
+export type WallSide = "left" | "right";
+
+/**
+ * Welcher Raum liegt auf welcher Seite einer Wand? Es werden Punkte knapp vor beiden Wandflächen
+ * abgetastet; der Raum mit den meisten Treffern gewinnt. Außenseiten haben keinen Raum.
+ */
+export function wallSideRooms(plan: Plan, g: WallGeometry): Record<WallSide, string | undefined> {
+  const result: Record<WallSide, string | undefined> = { left: undefined, right: undefined };
+  for (const [side, sign] of [["left", 1], ["right", -1]] as const) {
+    const votes = new Map<string, number>();
+    const across = sign * (g.wall.thickness / 2 + 0.06);
+    for (const t of [0.15, 0.3, 0.5, 0.7, 0.85]) {
+      const along = g.length * t;
+      const p: Point = [
+        g.start[0] + g.dir[0] * along + g.normal[0] * across,
+        g.start[1] + g.dir[1] * along + g.normal[1] * across,
+      ];
+      const r = roomAt(plan, p);
+      if (r) votes.set(r.id, (votes.get(r.id) ?? 0) + 1);
+    }
+    result[side] = [...votes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  }
+  return result;
+}
+
+/**
+ * Sichtbarkeit für eine Fokus-Auswahl: "all", "apt:<id>" oder "room:<id>".
+ * Liefert die sichtbaren Räume und Wände (Wände, die an mindestens einen sichtbaren Raum grenzen).
+ */
+export function visibility(plan: Plan, focus: string): { rooms: Set<string>; walls: Set<string> } {
+  const all = { rooms: new Set(plan.rooms.map((r) => r.id)), walls: new Set(plan.walls.map((w) => w.id)) };
+  let rooms: Room[];
+  if (focus.startsWith("apt:")) rooms = plan.rooms.filter((r) => r.apartment === focus.slice(4));
+  else if (focus.startsWith("room:")) rooms = plan.rooms.filter((r) => r.id === focus.slice(5));
+  else return all;
+  const roomIds = new Set(rooms.map((r) => r.id));
+  const walls = new Set<string>();
+  for (const w of plan.walls) {
+    const sides = wallSideRooms(plan, wallGeometry(plan, w));
+    if ((sides.left && roomIds.has(sides.left)) || (sides.right && roomIds.has(sides.right))) walls.add(w.id);
+  }
+  return { rooms: roomIds, walls };
+}
+
+/** Begrenzungsrahmen [minX, minY, maxX, maxY] einer Punktmenge. */
+export function bounds(points: readonly Point[]): [number, number, number, number] {
+  const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}

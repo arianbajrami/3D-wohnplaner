@@ -99,9 +99,10 @@ Die angegebenen m²-Werte dienen als Kontrolle für die erkannten Raumpolygone.
 - [x] Erkennungsansatz für Fotos: Claude als Vision-Modell (vorerst direkt über Claude Code)
 - [x] Referenzfall 1. OG als Modell erfasst: [`plans/1og.json`](plans/1og.json)
 - [ ] Türanschläge (Öffnungsrichtung) im Modell nachtragen
-- [ ] Möbel platzieren, Wandfarben (RAL), Bodenbeläge
+- [x] Möbel platzieren, Wandfarben (RAL), Bodenbeläge, Stilvorlagen (erste Version)
 - [ ] Varianten speichern und vergleichen
-- [ ] Woher kommen Möbelmodelle?
+- [ ] Stil per Freitext („Landhausküche mit …“) über Claude
+- [ ] Detailliertere Möbelmodelle (glTF) zusätzlich zu den parametrischen
 
 ## Lokal starten
 
@@ -154,13 +155,20 @@ npm install
 
 **Was die App kann (Stand jetzt)**
 
-- 2D-Plan mit dem entzerrten Originalfoto darunter (Deckkraft regelbar) und einer Flächenkontrolle
-  gegen die Plan-Werte
-- Wände, Raumecken und die Foto-Ausrichtung per Ziehen korrigieren, mit Rückgängig
-- Räume umbenennen und einer Wohnung zuordnen
-- 3D-Ansicht aus dem Modell, optional als Puppenhaus mit abgeschnittenen Wänden, Fokus auf eine Wohnung
-- Export/Import als JSON. Um Korrekturen dauerhaft zu übernehmen, die exportierte Datei nach `plans/` legen
-  und committen.
+- **Ansicht:** ganzes Geschoss, eine Wohnung oder ein einzelner Raum. Doppelklick auf einen Raum zeigt nur
+  diesen. Alles andere wird ausgeblendet, auch das Treppenhaus.
+- **Einrichten:** Raum anklicken, dann im Katalog Möbel hinzufügen (Wohnen, Essen, Küche, Schlafen, Bad,
+  Arbeiten). Im 2D-Plan verschieben, Möbel rasten an Wänden ein. Taste R dreht, Entf löscht. Maße in cm und
+  alle Oberflächen (Fronten, Arbeitsplatte, Bezug, Holz …) sind pro Möbel einstellbar.
+- **Gestalten:** Boden je Raum (Holz hell/dunkel, Fliesen, Stein, Teppich), Wandfarbe je Raum (RAL oder
+  eigene Farbe), einzelne Akzentwände in 3D mit „Wand streichen“.
+- **Stilvorlagen:** Landhaus, Skandinavisch, Modern und Industrial setzen Wände, Boden und alle
+  Möbeloberflächen eines Raums auf einmal, z. B. Landhausküche mit weißen Fronten und Holz-Arbeitsplatte.
+- **3D-Ansicht:** optional als Puppenhaus mit abgeschnittenen Wänden.
+- **Grundriss korrigieren:** Wände, Raumecken und die Lage des Originalfotos per Ziehen anpassen, mit
+  Rückgängig (Strg/Cmd+Z). Dazu eine Flächenkontrolle gegen die Plan-Werte.
+- **Speichern:** Der Browser merkt sich alles. Mit „Exportieren“ entsteht eine JSON-Datei. Um einen Stand
+  dauerhaft zu übernehmen, diese Datei nach `plans/` legen und committen.
 
 **Für Entwickler**
 

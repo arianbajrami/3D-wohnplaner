@@ -1,14 +1,20 @@
 import { z } from "zod";
 
 /**
- * Kanonisches Grundriss-Modell (Schema-Version 1).
+ * Kanonisches Grundriss-Modell (Schema-Version 2).
  *
  * Konventionen:
  * - Alle Längen in Metern.
  * - 2D-Koordinaten: x nach rechts, y nach unten (wie Bild/Plan). In 3D wird y zu z.
  * - Wände sind Mittellinien zwischen zwei Knoten; Wände, die sich treffen, teilen Knoten.
  */
-export const SCHEMA_VERSION = 1 as const;
+export const SCHEMA_VERSION = 2 as const;
+
+/**
+ * Oberfläche: entweder eine Farbe ("#rrggbb") oder die ID eines Materials aus dem Katalog der App
+ * (z. B. "eiche-hell", "fliese-grau-60"). Das Modell kennt den Katalog nicht, nur den Verweis.
+ */
+export const Finish = z.string().min(1);
 
 const Id = z.string().min(1);
 const Meters = z.number().finite();
@@ -25,6 +31,8 @@ export const Wall = z.object({
   /** Überschreibt meta.defaultWallHeight */
   height: Positive.optional(),
   kind: z.enum(["exterior", "interior"]),
+  /** Abweichende Oberfläche je Wandseite (Akzentwand). left = Seite der Normalen links von a→b. */
+  finishes: z.object({ left: Finish.optional(), right: Finish.optional() }).optional(),
 });
 
 export const Opening = z.object({
@@ -53,7 +61,15 @@ export const Room = z.object({
   countsAsLivingArea: z.boolean().default(true),
   /** Fläche laut Quelle (Plan-Beschriftung) als Kontrollwert */
   targetArea: Positive.optional(),
-  floor: z.string().optional(),
+  finishes: z
+    .object({
+      floor: Finish.optional(),
+      /** Standardfarbe aller Wandseiten, die zu diesem Raum zeigen */
+      walls: Finish.optional(),
+      /** zuletzt angewendete Stilvorlage (nur zur Anzeige) */
+      style: z.string().optional(),
+    })
+    .optional(),
 });
 
 export const Apartment = z.object({
@@ -64,17 +80,21 @@ export const Apartment = z.object({
 
 export const Furniture = z.object({
   id: Id,
+  /** Katalog-Typ der App, z. B. "sofa-3", "kuechen-unterschrank" */
   type: z.string(),
   name: z.string().optional(),
   /** Mittelpunkt in der Ebene */
   x: Meters,
   y: Meters,
-  /** Drehung um die Hochachse in Grad */
+  /** Drehung um die Hochachse in Grad (im Uhrzeigersinn in der Draufsicht) */
   rotation: z.number().finite().default(0),
+  /** Höhe der Unterkante über dem Boden (z. B. Oberschränke) */
+  elevation: z.number().finite().min(0).default(0),
   width: Positive,
   depth: Positive,
   height: Positive,
-  color: z.string().optional(),
+  /** Oberflächen je Rolle, z. B. { front: "#ffffff", worktop: "holz-eiche" } */
+  finishes: z.record(z.string(), Finish).default({}),
 });
 
 export const Calibration = z.object({

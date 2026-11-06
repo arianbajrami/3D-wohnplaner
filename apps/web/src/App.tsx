@@ -1,15 +1,17 @@
-import { apartmentAreaChecks, parsePlan, roomAreaChecks, validatePlan } from "@wohnplaner/model";
-import { lazy, Suspense, useMemo, useRef, useState } from "react";
-import { apartmentColor, fmtArea, fmtPercent } from "./format";
+import { parsePlan, validatePlan, wallGeometry, wallSideRooms, type Plan, type WallSide } from "@wohnplaner/model";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { RAL_COLORS } from "./catalog/materials";
+import { AreaTable, FinishPicker, FurniturePanel, RoomPanel } from "./panels";
 import { Plan2D, type EditMode } from "./Plan2D";
 import { bundledPlans, photoUrlFor } from "./plans";
+import type { Selection } from "./selection";
 import { downloadJson, usePlanStore } from "./usePlanStore";
 
 // three.js erst laden, wenn jemand die 3D-Ansicht öffnet
 const Scene3D = lazy(() => import("./Scene3D").then((m) => ({ default: m.Scene3D })));
 
 const MODES: { id: EditMode; label: string; hint: string }[] = [
-  { id: "view", label: "Ansehen", hint: "Ziehen verschiebt, Mausrad zoomt, Klick wählt einen Raum." },
+  { id: "furnish", label: "Einrichten", hint: "Klick wählt Raum oder Möbel. Möbel ziehen verschiebt (rastet an Wänden ein). Doppelklick zeigt nur den Raum." },
   { id: "walls", label: "Wände", hint: "Wandknoten ziehen. Rastet auf 1 cm und an anderen Knoten ein." },
   { id: "rooms", label: "Räume", hint: "Raumecken ziehen. Fläche wird live nachgerechnet." },
   { id: "photo", label: "Foto ausrichten", hint: "Die vier Fotopunkte an die passenden Stellen im Plan ziehen." },
@@ -22,23 +24,77 @@ export function App() {
   return <Workspace key={entry.key} entryKey={entry.key} original={entry.plan} onSwitch={setPlanKey} />;
 }
 
-function Workspace({ entryKey, original, onSwitch }: { entryKey: string; original: typeof bundledPlans[number]["plan"]; onSwitch: (k: string) => void }) {
+function Workspace({ entryKey, original, onSwitch }: { entryKey: string; original: Plan; onSwitch: (k: string) => void }) {
   const store = usePlanStore(entryKey, original);
-  const { plan } = store;
+  const { plan, setPlan } = store;
   const [view, setView] = useState<"2d" | "3d">("2d");
-  const [mode, setMode] = useState<EditMode>("view");
-  const [showPhoto, setShowPhoto] = useState(true);
+  const [mode, setMode] = useState<EditMode>("furnish");
+  const [showPhoto, setShowPhoto] = useState(false);
   const [photoOpacity, setPhotoOpacity] = useState(0.6);
   const [focus, setFocus] = useState("all");
-  const [cutaway, setCutaway] = useState(false);
-  const [selectedRoom, setSelectedRoom] = useState<string>();
+  const [cutaway, setCutaway] = useState(true);
+  const [painting, setPainting] = useState(false);
+  const [paintColor, setPaintColor] = useState(RAL_COLORS.find((c) => c.code === "6021")!.hex);
+  const [selection, setSelection] = useState<Selection>();
   const fileInput = useRef<HTMLInputElement>(null);
 
   const photoUrl = photoUrlFor(plan);
-  const rooms = useMemo(() => roomAreaChecks(plan), [plan]);
-  const apartments = useMemo(() => apartmentAreaChecks(plan), [plan]);
   const issues = useMemo(() => validatePlan(plan), [plan]);
-  const selected = plan.rooms.find((r) => r.id === selectedRoom);
+  const selectedRoom = selection?.kind === "room" ? plan.rooms.find((r) => r.id === selection.id) : undefined;
+  const selectedFurniture = selection?.kind === "furniture" ? plan.furniture.find((f) => f.id === selection.id) : undefined;
+
+  const focusRoom = (roomId: string) => {
+    setFocus(`room:${roomId}`);
+    setSelection({ kind: "room", id: roomId });
+  };
+
+  /**
+   * Streicht eine Wandseite. Wände sind an T-Stößen in Teilstücke geteilt; alle Teilstücke auf
+   * derselben Linie, die zum selben Raum zeigen, werden mitgestrichen – so wie man eine Wand streicht.
+   */
+  const paintWall = (wallId: string, side: WallSide) => {
+    const target = plan.walls.find((w) => w.id === wallId);
+    if (!target) return;
+    const g = wallGeometry(plan, target);
+    const room = wallSideRooms(plan, g)[side];
+    const updates = new Map<string, WallSide>([[wallId, side]]);
+    if (room) {
+      for (const w of plan.walls) {
+        const g2 = wallGeometry(plan, w);
+        const cross = g.dir[0] * g2.dir[1] - g.dir[1] * g2.dir[0];
+        const off = (g2.start[0] - g.start[0]) * g.normal[0] + (g2.start[1] - g.start[1]) * g.normal[1];
+        if (Math.abs(cross) > 1e-6 || Math.abs(off) > 1e-3) continue;
+        const side2: WallSide = g.dir[0] * g2.dir[0] + g.dir[1] * g2.dir[1] > 0 ? side : side === "left" ? "right" : "left";
+        if (wallSideRooms(plan, g2)[side2] === room) updates.set(w.id, side2);
+      }
+    }
+    setPlan({
+      ...plan,
+      walls: plan.walls.map((w) => (updates.has(w.id) ? { ...w, finishes: { ...w.finishes, [updates.get(w.id)!]: paintColor } } : w)),
+    });
+  };
+
+  // Tastatur: Entf löscht, R dreht, Strg/Cmd+Z macht rückgängig, Esc hebt Auswahl auf
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest("input, select, textarea")) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        store.undo();
+      } else if (e.key === "Escape") {
+        setSelection(undefined);
+        setPainting(false);
+      } else if (selectedFurniture && (e.key === "Delete" || e.key === "Backspace")) {
+        setPlan({ ...plan, furniture: plan.furniture.filter((f) => f.id !== selectedFurniture.id) });
+        setSelection(undefined);
+      } else if (selectedFurniture && e.key.toLowerCase() === "r") {
+        setPlan({ ...plan, furniture: plan.furniture.map((f) => (f.id === selectedFurniture.id ? { ...f, rotation: (f.rotation + 90) % 360 } : f)) });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [plan, selectedFurniture, setPlan, store]);
 
   const importFile = async (file: File) => {
     try {
@@ -64,14 +120,23 @@ function Workspace({ entryKey, original, onSwitch }: { entryKey: string; origina
           <button className={view === "3d" ? "active" : ""} onClick={() => setView("3d")}>3D</button>
         </div>
         <label>
-          Fokus{" "}
+          Ansicht{" "}
           <select value={focus} onChange={(e) => setFocus(e.target.value)}>
-            <option value="all">ganzes Geschoss</option>
-            {plan.apartments.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            <option value="all">Ganzes Geschoss</option>
+            {plan.apartments.map((a) => <option key={a.id} value={`apt:${a.id}`}>{a.name}</option>)}
+            {[...plan.apartments.map((a) => ({ id: a.id, name: a.name })), { id: undefined, name: "Allgemein" }].map((a) => {
+              const rooms = plan.rooms.filter((r) => r.apartment === a.id);
+              return rooms.length ? (
+                <optgroup key={a.id ?? "-"} label={`Räume – ${a.name}`}>
+                  {rooms.map((r) => <option key={r.id} value={`room:${r.id}`}>{r.name}</option>)}
+                </optgroup>
+              ) : null;
+            })}
           </select>
         </label>
+        {focus !== "all" && <button onClick={() => setFocus("all")} title="Alles zeigen">✕</button>}
         <div className="spacer" />
-        <button onClick={store.undo} disabled={!store.canUndo} title="Rückgängig">↶ Rückgängig</button>
+        <button onClick={store.undo} disabled={!store.canUndo} title="Rückgängig (Strg/Cmd+Z)">↶ Rückgängig</button>
         <button onClick={() => confirm("Alle Änderungen verwerfen und den Stand aus plans/ laden?") && store.reset()} disabled={!store.isModified}>
           Zurücksetzen
         </button>
@@ -80,7 +145,7 @@ function Workspace({ entryKey, original, onSwitch }: { entryKey: string; origina
         <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
       </header>
 
-      {view === "2d" && (
+      {view === "2d" ? (
         <div className="toolbar">
           {MODES.map((m) => (
             <button key={m.id} className={mode === m.id ? "active" : ""} onClick={() => setMode(m.id)} disabled={m.id === "photo" && !photoUrl}>
@@ -91,105 +156,85 @@ function Workspace({ entryKey, original, onSwitch }: { entryKey: string; origina
           <div className="spacer" />
           {photoUrl && (
             <>
-              <label><input type="checkbox" checked={showPhoto} onChange={(e) => setShowPhoto(e.target.checked)} /> Foto</label>
+              <label><input type="checkbox" checked={showPhoto} onChange={(e) => setShowPhoto(e.target.checked)} /> Originalfoto</label>
               <input type="range" min={0.1} max={1} step={0.05} value={photoOpacity} disabled={!showPhoto} onChange={(e) => setPhotoOpacity(+e.target.value)} />
             </>
           )}
         </div>
-      )}
-      {view === "3d" && (
+      ) : (
         <div className="toolbar">
           <label><input type="checkbox" checked={cutaway} onChange={(e) => setCutaway(e.target.checked)} /> Wände abschneiden (Puppenhaus)</label>
-          <span className="hint">Linke Maustaste dreht, rechte verschiebt, Mausrad zoomt. Klick auf einen Boden wählt den Raum.</span>
+          <button className={painting ? "active" : ""} onClick={() => setPainting(!painting)}>🖌 Wand streichen</button>
+          {painting && (
+            <div className="paint-picker">
+              <FinishPicker label="Farbe" value={paintColor} fallback={paintColor} paint onChange={setPaintColor} />
+            </div>
+          )}
+          <span className="hint">
+            {painting
+              ? "Auf eine Wandseite klicken, um sie zu streichen (Akzentwand). Esc beendet."
+              : "Linke Maustaste dreht, rechte verschiebt, Mausrad zoomt. Klick wählt, Doppelklick auf einen Boden zeigt nur den Raum."}
+          </span>
         </div>
       )}
 
       <main>
-        <section className="canvas">
+        <section className={`canvas ${painting && view === "3d" ? "painting" : ""}`}>
           {view === "2d" ? (
             <Plan2D
               plan={plan}
-              setPlan={store.setPlan}
+              setPlan={setPlan}
               checkpoint={store.checkpoint}
               mode={mode}
               photoUrl={photoUrl}
               showPhoto={showPhoto}
               photoOpacity={photoOpacity}
               focus={focus}
-              selectedRoom={selectedRoom}
-              onSelectRoom={setSelectedRoom}
+              selection={selection}
+              onSelect={setSelection}
+              onFocusRoom={focusRoom}
             />
           ) : (
             <Suspense fallback={<p className="empty">3D wird geladen …</p>}>
-              <Scene3D plan={plan} focus={focus} cutaway={cutaway} selectedRoom={selectedRoom} onSelectRoom={setSelectedRoom} />
+              <Scene3D
+                plan={plan}
+                focus={focus}
+                cutaway={cutaway}
+                selection={selection}
+                onSelect={setSelection}
+                onFocusRoom={focusRoom}
+                paint={painting ? paintColor : undefined}
+                onPaintWall={paintWall}
+              />
             </Suspense>
           )}
         </section>
 
         <aside>
-          <h2>Flächen</h2>
-          <table>
-            <thead>
-              <tr><th>Raum</th><th>Modell</th><th>Plan</th><th>Abw.</th></tr>
-            </thead>
-            <tbody>
-              {[...plan.apartments.map((a) => a.id), undefined].map((aptId) => {
-                const apt = apartments.find((a) => a.id === aptId);
-                const list = plan.rooms.filter((r) => r.apartment === aptId);
-                if (!list.length) return null;
-                return [
-                  <tr key={`h-${aptId}`} className="apt-row">
-                    <td><span className="swatch" style={{ background: apartmentColor(aptId) }} />{apt?.name ?? "Allgemein"}</td>
-                    <td>{apt ? fmtArea(apt.area) : ""}</td>
-                    <td>{apt?.target ? fmtArea(apt.target) : ""}</td>
-                    <td><Deviation v={apt?.deviation} limit={0.01} /></td>
-                  </tr>,
-                  ...list.map((r) => {
-                    const c = rooms.find((x) => x.id === r.id)!;
-                    return (
-                      <tr key={r.id} className={r.id === selectedRoom ? "selected" : ""} onClick={() => setSelectedRoom(r.id)}>
-                        <td className="indent">{r.name}</td>
-                        <td>{fmtArea(c.area, 2)}</td>
-                        <td>{c.target ? fmtArea(c.target) : "–"}</td>
-                        <td><Deviation v={c.deviation} limit={0.03} /></td>
-                      </tr>
-                    );
-                  }),
-                ];
-              })}
-            </tbody>
-          </table>
-
-          {selected && (
-            <div className="room-edit">
-              <h2>Raum</h2>
-              <label>
-                Name
-                <input
-                  value={selected.name}
-                  onFocus={store.checkpoint}
-                  onChange={(e) =>
-                    store.setPlan({ ...plan, rooms: plan.rooms.map((r) => (r.id === selected.id ? { ...r, name: e.target.value } : r)) }, false)
-                  }
-                />
-              </label>
-              <label>
-                Wohnung
-                <select
-                  value={selected.apartment ?? ""}
-                  onChange={(e) =>
-                    store.setPlan({
-                      ...plan,
-                      rooms: plan.rooms.map((r) => (r.id === selected.id ? { ...r, apartment: e.target.value || undefined, countsAsLivingArea: !!e.target.value } : r)),
-                    })
-                  }
-                >
-                  <option value="">– keine (z. B. Treppenhaus) –</option>
-                  {plan.apartments.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </label>
+          {selectedFurniture ? (
+            <FurniturePanel plan={plan} setPlan={setPlan} checkpoint={store.checkpoint} f={selectedFurniture} onSelect={setSelection} />
+          ) : selectedRoom ? (
+            <RoomPanel
+              plan={plan}
+              setPlan={setPlan}
+              checkpoint={store.checkpoint}
+              room={selectedRoom}
+              focus={focus}
+              setFocus={setFocus}
+              onSelect={setSelection}
+            />
+          ) : (
+            <div className="panel">
+              <p className="muted">
+                Einen Raum anklicken, um ihn zu gestalten und einzurichten. Doppelklick zeigt nur diesen Raum.
+              </p>
             </div>
           )}
+
+          <details open={!selection}>
+            <summary>Flächen</summary>
+            <AreaTable plan={plan} selection={selection} onSelect={setSelection} />
+          </details>
 
           {issues.length > 0 && (
             <>
@@ -200,18 +245,19 @@ function Workspace({ entryKey, original, onSwitch }: { entryKey: string; origina
             </>
           )}
 
-          <h2>Über das Modell</h2>
-          <ul className="notes">
-            {plan.meta.notes.map((n, i) => <li key={i}>{n}</li>)}
-            {store.isModified && <li><strong>Geändert gegenüber plans/{entryKey}.json</strong>: im Browser gespeichert. Mit „Exportieren“ sichern.</li>}
-          </ul>
+          <details>
+            <summary>Über das Modell</summary>
+            <ul className="notes">
+              {plan.meta.notes.map((n, i) => <li key={i}>{n}</li>)}
+            </ul>
+          </details>
+          {store.isModified && (
+            <p className="muted small">
+              <strong>Geändert gegenüber plans/{entryKey}.json</strong>: im Browser gespeichert. Mit „Exportieren“ als Datei sichern.
+            </p>
+          )}
         </aside>
       </main>
     </div>
   );
-}
-
-function Deviation({ v, limit }: { v?: number; limit: number }) {
-  if (v === undefined) return null;
-  return <span className={Math.abs(v) > limit ? "warn" : "ok"}>{fmtPercent(v)}</span>;
 }

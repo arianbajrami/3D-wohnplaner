@@ -112,3 +112,61 @@ td.indent { padding-left: 18px; }
   aside { width: auto; max-height: 40%; border-left: none; border-top: 1px solid var(--line); }
   .hint { display: none; }
 }
+
+/* Seitenleiste: Panels */
+.panel { padding-bottom: 6px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.panel h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 14px 0 6px; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.row { display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; margin: 6px 0; }
+.field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+.field input, .field select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); font-size: 14px; background: #fff; }
+.small-field { width: 70px; margin-bottom: 0; }
+.small-field.inline { flex-direction: row; align-items: center; gap: 4px; width: auto; }
+.small-field.inline input { width: 64px; }
+.actions { margin-top: 14px; }
+button.danger { color: #b3261e; }
+button.link { border: none; background: none; padding: 2px 0; color: var(--text); text-decoration: underline; text-decoration-color: var(--line); }
+.item-list { list-style: none; padding: 0; margin: 0; }
+details { margin-top: 12px; }
+summary { cursor: pointer; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 6px; }
+
+.styles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.style-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 6px 8px; text-align: left; }
+.style-card.active { outline: 2px solid var(--accent); border-color: var(--accent); }
+.style-swatches { display: flex; gap: 2px; }
+.style-swatches span { width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.12); }
+
+.tabs-small { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.tabs-small button { font-size: 12px; padding: 2px 8px; }
+.catalog { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.catalog button { font-size: 13px; text-align: left; padding: 6px 8px; }
+
+.finish-picker { margin-bottom: 6px; }
+.finish-current { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 5px 8px; }
+.finish-text { display: flex; flex-direction: column; flex: 1; font-size: 13px; }
+.finish-label { font-size: 11px; color: var(--muted); }
+.chevron { color: var(--muted); }
+.swatch-lg { width: 26px; height: 26px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, 0.15); flex-shrink: 0; }
+.finish-options { border: 1px solid var(--line); border-top: none; border-radius: 0 0 6px 6px; padding: 6px 8px 8px; background: #fbfaf8; }
+.finish-group { font-size: 11px; color: var(--muted); margin: 6px 0 4px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 4px; }
+.swatch-btn { width: 26px; height: 26px; padding: 0; border-radius: 4px; border: 1px solid rgba(0, 0, 0, 0.15); position: relative; }
+.swatch-btn.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+.swatch-btn.pattern-planks { background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0 1px, transparent 1px 6px) !important; }
+.swatch-btn.pattern-tiles { background-image: linear-gradient(rgba(0,0,0,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.15) 1px, transparent 1px) !important; background-size: 9px 9px !important; }
+.swatch-btn.custom { display: flex; align-items: center; justify-content: center; background: #fff; cursor: pointer; font-size: 16px; color: var(--muted); }
+.swatch-btn.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.paint-picker { position: relative; width: 240px; }
+.paint-picker .finish-options { position: absolute; z-index: 10; left: 0; right: 0; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12); }
+.canvas.painting canvas { cursor: crosshair; }
+
+/* Möbel im 2D-Plan */
+.furniture-part { stroke: rgba(0, 0, 0, 0.35); stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+.furniture-outline { fill: none; stroke: rgba(0, 0, 0, 0.55); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.furniture-front { stroke: rgba(0, 0, 0, 0.75); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.furniture.interactive { cursor: move; }
+.furniture.selected .furniture-outline { stroke: var(--accent); stroke-width: 2.5; }
+.furniture-label { fill: var(--text); pointer-events: none; paint-order: stroke; stroke: rgba(255, 255, 255, 0.85); stroke-width: 2.5px; vector-effect: non-scaling-stroke; font-weight: 500; }
+.mode-walls .furniture, .mode-rooms .furniture, .mode-photo .furniture { pointer-events: none; opacity: 0.5; }
