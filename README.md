@@ -192,7 +192,7 @@ Warum ein gemeinsamer Branch mit Ordnern pro Person statt zwei Branches: siehe
 
 - **Ansicht:** ganzes Geschoss, eine Wohnung oder ein einzelner Raum. Doppelklick auf einen Raum zeigt nur
   diesen. Alles andere wird ausgeblendet, auch das Treppenhaus.
-- **Einrichten:** Raum anklicken, dann im Katalog Möbel hinzufügen (Wohnen, Essen, Küche, Schlafen, Bad,
+- **Einrichten:** Raum anklicken, dann im Katalog Möbel hinzufügen (Wohnen, Musik mit Klavier und Flügel, Essen, Küche, Schlafen, Bad,
   Arbeiten). Im 2D-Plan oder in 3D verschieben, Möbel rasten an Wänden ein. Taste R dreht, Entf löscht. Maße in cm und
   alle Oberflächen (Fronten, Arbeitsplatte, Bezug, Holz …) sind pro Möbel einstellbar.
 - **Genau platzieren:** Möbel lassen sich nicht in Wände oder andere Möbel schieben. Sie stoppen genau beim
