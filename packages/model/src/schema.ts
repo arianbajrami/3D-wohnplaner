@@ -33,6 +33,11 @@ export const Wall = z.object({
   kind: z.enum(["exterior", "interior"]),
   /** Abweichende Oberfläche je Wandseite (Akzentwand). left = Seite der Normalen links von a→b. */
   finishes: z.object({ left: Finish.optional(), right: Finish.optional() }).optional(),
+  /**
+   * In dieser Gestaltungsvariante entfernt (z. B. offene Küche). Gehört zur Variante, nicht zum
+   * Grundriss: im Grundriss bleibt die Wand erhalten.
+   */
+  removed: z.boolean().optional(),
 });
 
 export const Opening = z.object({

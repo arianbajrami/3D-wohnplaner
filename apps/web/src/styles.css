@@ -218,3 +218,16 @@ button.big { font-size: 16px; padding: 10px 22px; flex: 1; }
 @media (max-width: 800px) {
   .compare-panes { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
 }
+
+/* Wände wählen/entfernen, Abstände, Überschneidungen */
+.wall-pickable { cursor: pointer; }
+.wall-pickable:hover { fill: var(--accent); fill-opacity: 0.6; }
+.wall-selected { fill: var(--accent) !important; fill-opacity: 0.85 !important; }
+.wall-removed { fill: rgba(210, 85, 45, 0.08); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; cursor: pointer; }
+.clearance line { stroke: #2d6fd2; stroke-width: 1.2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.clearance circle { fill: #2d6fd2; }
+.clearance text { fill: #1f4f99; font-weight: 600; paint-order: stroke; stroke: rgba(255, 255, 255, 0.9); stroke-width: 3px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.clearance.touching text { fill: var(--ok); }
+.furniture.colliding .furniture-outline { stroke: #c62828; stroke-width: 2.5; stroke-dasharray: 5 3; }
+/* Öffnungen (Türen/Fenster) fangen keine Klicks ab – darunter liegt die Wand */
+.opening, .window-line, .window-glass, .door-sill, .door-leaf, .door-arc { pointer-events: none; }

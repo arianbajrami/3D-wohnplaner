@@ -195,6 +195,12 @@ Warum ein gemeinsamer Branch mit Ordnern pro Person statt zwei Branches: siehe
 - **Einrichten:** Raum anklicken, dann im Katalog Möbel hinzufügen (Wohnen, Essen, Küche, Schlafen, Bad,
   Arbeiten). Im 2D-Plan oder in 3D verschieben, Möbel rasten an Wänden ein. Taste R dreht, Entf löscht. Maße in cm und
   alle Oberflächen (Fronten, Arbeitsplatte, Bezug, Holz …) sind pro Möbel einstellbar.
+- **Genau platzieren:** Möbel lassen sich nicht in Wände oder andere Möbel schieben. Sie stoppen genau beim
+  Berühren, Ober- über Unterschränken und Möbel auf Teppichen sind aber erlaubt. Blaue Maßlinien zeigen den
+  Abstand zur nächsten Wand bzw. zum nächsten Möbel in cm. Pfeiltasten schieben um 1 cm (mit Umschalt 10 cm).
+  Ist ein einzelner Raum geöffnet, bleibt alles in diesem Raum. „Duplizieren“ legt die Kopie bündig daneben.
+- **Wände entfernen:** Im Modus „Wände“ eine Wand anklicken und entfernen. Das gilt nur für die aktuelle
+  Variante, z. B. „Küche offen“ gegen „Küche mit Wand“ vergleichen. Der Boden läuft dann durch.
 - **Gestalten:** Boden je Raum (Holz hell/dunkel, Fliesen, Stein, Teppich), Wandfarbe je Raum (RAL oder
   eigene Farbe), einzelne Akzentwände in 3D mit „Wand streichen“.
 - **Stilvorlagen:** Landhaus, Skandinavisch, Modern und Industrial setzen Wände, Boden und alle

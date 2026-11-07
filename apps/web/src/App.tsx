@@ -1,12 +1,13 @@
-import { parsePlan, slugify, validatePlan, wallGeometry, wallSideRooms, type Plan, type WallSide } from "@wohnplaner/model";
+import { activeWalls, parsePlan, slugify, validatePlan, wallGeometry, wallSideRooms, type Plan, type WallSide } from "@wohnplaner/model";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { RAL_COLORS } from "./catalog/materials";
 import { Compare } from "./Compare";
 import { walkInput } from "./interaction3d";
-import { AreaTable, FinishPicker, FurniturePanel, RoomPanel } from "./panels";
+import { AreaTable, FinishPicker, FurniturePanel, RoomPanel, setWallsRemoved, WallPanel } from "./panels";
 import { Plan2D, type EditMode } from "./Plan2D";
 import { bundledPlans, photoUrlFor } from "./plans";
 import type { Selection } from "./selection";
+import { placeFurniture } from "./snap";
 import { downloadJson } from "./download";
 import { useWorkspace, variantKey, type Person } from "./useWorkspace";
 
@@ -15,7 +16,7 @@ const Scene3D = lazy(() => import("./Scene3D").then((m) => ({ default: m.Scene3D
 
 const MODES: { id: EditMode; label: string; hint: string }[] = [
   { id: "furnish", label: "Einrichten", hint: "Klick wählt Raum oder Möbel. Möbel ziehen verschiebt (rastet an Wänden ein). Doppelklick zeigt nur den Raum." },
-  { id: "walls", label: "Wände", hint: "Wandknoten ziehen. Rastet auf 1 cm und an anderen Knoten ein." },
+  { id: "walls", label: "Wände", hint: "Wand anklicken, um sie zu entfernen oder wiederherzustellen. Wandknoten ziehen korrigiert den Grundriss (rastet auf 1 cm ein)." },
   { id: "rooms", label: "Räume", hint: "Raumecken ziehen. Fläche wird live nachgerechnet." },
   { id: "photo", label: "Foto ausrichten", hint: "Die vier Fotopunkte an die passenden Stellen im Plan ziehen." },
 ];
@@ -171,6 +172,18 @@ function Workspace(props: { entryKey: string; original: Plan; onSwitch: (k: stri
         setWalk(false);
       } else if (walk) {
         return; // Tasten gehören beim Durchlaufen der Bewegung
+      } else if (selection?.kind === "wall" && (e.key === "Delete" || e.key === "Backspace")) {
+        const w = plan.walls.find((x) => x.id === selection.id);
+        if (w && w.kind === "interior" && !w.removed) setPlan(setWallsRemoved(plan, w.id, true));
+      } else if (selectedFurniture && e.key.startsWith("Arrow")) {
+        // Feinjustieren: 1 cm, mit Umschalt 10 cm – mit denselben Regeln wie beim Ziehen
+        e.preventDefault();
+        const step = e.shiftKey ? 0.1 : 0.01;
+        const [dx, dy] = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key] ?? [0, 0];
+        const geoms = activeWalls(plan).map((w) => wallGeometry(plan, w));
+        const room = focus.startsWith("room:") ? plan.rooms.find((r) => r.id === focus.slice(5)) : undefined;
+        const [x, y] = placeFurniture(plan, geoms, selectedFurniture, selectedFurniture.x + dx!, selectedFurniture.y + dy!, 0, room);
+        setPlan({ ...plan, furniture: plan.furniture.map((f) => (f.id === selectedFurniture.id ? { ...f, x, y } : f)) });
       } else if (selectedFurniture && (e.key === "Delete" || e.key === "Backspace")) {
         setPlan({ ...plan, furniture: plan.furniture.filter((f) => f.id !== selectedFurniture.id) });
         setSelection(undefined);
@@ -379,7 +392,9 @@ function Workspace(props: { entryKey: string; original: Plan; onSwitch: (k: stri
 
             <aside>
               {selectedFurniture ? (
-                <FurniturePanel plan={plan} setPlan={setPlan} checkpoint={ws.checkpoint} f={selectedFurniture} onSelect={setSelection} />
+                <FurniturePanel plan={plan} setPlan={setPlan} checkpoint={ws.checkpoint} f={selectedFurniture} focus={focus} onSelect={setSelection} />
+              ) : selection?.kind === "wall" ? (
+                <WallPanel plan={plan} setPlan={setPlan} checkpoint={ws.checkpoint} wallId={selection.id} onSelect={setSelection} />
               ) : selectedRoom ? (
                 <RoomPanel plan={plan} setPlan={setPlan} checkpoint={ws.checkpoint} room={selectedRoom} focus={focus} setFocus={setFocus} onSelect={setSelection} />
               ) : (

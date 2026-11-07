@@ -1,5 +1,6 @@
 import {
   apartmentAreaChecks,
+  roomAt,
   roomAreaChecks,
   roomLabelPoint,
   wallGeometry,
@@ -14,6 +15,7 @@ import { DEFAULT_WALL, materialsFor, RAL_COLORS, resolveFinish, type Use } from 
 import { applyStyle, defaultFinishes, furnitureInRoom, STYLES } from "./catalog/styles";
 import { apartmentColor, fmtArea, fmtPercent } from "./format";
 import type { Selection } from "./selection";
+import { findFreeSpot } from "./snap";
 
 interface StoreProps {
   plan: Plan;
@@ -25,6 +27,48 @@ interface StoreProps {
 let lastCategory = CATEGORIES[0]!;
 
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+
+// ---------------------------------------------------------------- Zahlenfeld
+
+/**
+ * Zahlenfeld, in das man frei tippen kann: Während der Eingabe darf der Text auch kurz leer oder
+ * ungültig sein (z. B. erste Ziffer gelöscht); übernommen wird nur ein gültiger Wert.
+ */
+export function NumberField(props: {
+  label?: string;
+  value: number;
+  min?: number;
+  step?: number;
+  className?: string;
+  onFocus?: () => void;
+  onCommit: (v: number) => void;
+}) {
+  const [text, setText] = useState<string>();
+  const min = props.min ?? -Infinity;
+  return (
+    <label className={`field small-field ${props.className ?? ""}`}>
+      {props.label}
+      <input
+        type="number"
+        inputMode="decimal"
+        step={props.step ?? 1}
+        value={text ?? String(props.value)}
+        onFocus={(e) => {
+          props.onFocus?.();
+          setText(String(props.value));
+          e.target.select();
+        }}
+        onChange={(e) => {
+          setText(e.target.value);
+          const v = Number(e.target.value.replace(",", "."));
+          if (e.target.value.trim() !== "" && Number.isFinite(v) && v >= min) props.onCommit(v);
+        }}
+        onBlur={() => setText(undefined)}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+      />
+    </label>
+  );
+}
 
 // ---------------------------------------------------------------- Oberflächen-Auswahl
 
@@ -130,6 +174,9 @@ export function RoomPanel(
       height: t.h,
       finishes: defaultFinishes(type, room),
     };
+    // auf einen freien Platz im Raum stellen (sonst Raummitte, dann rot markiert)
+    const spot = findFreeSpot(plan, f, room);
+    if (spot) [f.x, f.y] = spot;
     setPlan({ ...plan, furniture: [...plan.furniture, f] });
     props.onSelect({ kind: "furniture", id: f.id });
   };
@@ -241,7 +288,7 @@ export function RoomPanel(
 
 // ---------------------------------------------------------------- Möbel
 
-export function FurniturePanel(props: StoreProps & { f: Furniture; onSelect: (s: Selection) => void }) {
+export function FurniturePanel(props: StoreProps & { f: Furniture; focus: string; onSelect: (s: Selection) => void }) {
   const { plan, setPlan, f } = props;
   const type = FURNITURE_BY_ID.get(f.type);
   const update = (patch: Partial<Furniture>, withCheckpoint = true) =>
@@ -249,21 +296,17 @@ export function FurniturePanel(props: StoreProps & { f: Furniture; onSelect: (s:
   const roles = (type?.roles ?? (Object.keys(f.finishes) as Role[])).filter((r) => ROLES[r]);
 
   const cm = (key: "width" | "depth" | "height" | "elevation", label: string) => (
-    <label className="field small-field">
-      {label}
-      <input
-        type="number"
-        min={key === "elevation" ? 0 : 1}
-        step={1}
-        value={Math.round(f[key] * 100)}
-        onFocus={props.checkpoint}
-        onChange={(e) => {
-          const v = Number(e.target.value) / 100;
-          if (Number.isFinite(v) && (key === "elevation" ? v >= 0 : v > 0)) update({ [key]: v }, false);
-        }}
-      />
-    </label>
+    <NumberField
+      label={label}
+      value={Math.round(f[key] * 1000) / 10}
+      min={key === "elevation" ? 0 : 1}
+      onFocus={props.checkpoint}
+      onCommit={(v) => update({ [key]: v / 100 }, false)}
+    />
   );
+  // Raum, in dem gearbeitet wird: geöffneter Raum, sonst der Raum, in dem das Möbel steht
+  const room = props.focus.startsWith("room:") ? plan.rooms.find((r) => r.id === props.focus.slice(5)) : roomAt(plan, [f.x, f.y]);
+  const [notice, setNotice] = useState<string>();
 
   return (
     <div className="panel">
@@ -283,16 +326,14 @@ export function FurniturePanel(props: StoreProps & { f: Furniture; onSelect: (s:
       <div className="row">
         <button onClick={() => update({ rotation: (f.rotation + 270) % 360 })} title="90° gegen den Uhrzeigersinn">⟲ 90°</button>
         <button onClick={() => update({ rotation: (f.rotation + 90) % 360 })} title="90° im Uhrzeigersinn (Taste R)">⟳ 90°</button>
-        <label className="field small-field inline">
-          <input
-            type="number"
-            step={5}
-            value={Math.round(f.rotation)}
-            onFocus={props.checkpoint}
-            onChange={(e) => Number.isFinite(+e.target.value) && update({ rotation: ((+e.target.value % 360) + 360) % 360 }, false)}
-          />
-          °
-        </label>
+        <NumberField
+          className="inline"
+          value={Math.round(f.rotation)}
+          step={5}
+          onFocus={props.checkpoint}
+          onCommit={(v) => update({ rotation: ((v % 360) + 360) % 360 }, false)}
+        />
+        °
       </div>
       <h3>Oberflächen</h3>
       {roles.map((role) => (
@@ -309,7 +350,15 @@ export function FurniturePanel(props: StoreProps & { f: Furniture; onSelect: (s:
       <div className="row actions">
         <button
           onClick={() => {
-            const copy = { ...f, id: newId("m"), x: f.x + 0.3, y: f.y + 0.3 };
+            // Kopie bündig neben das Original, im selben Raum
+            const copy = { ...f, id: newId("m") };
+            const spot = room && findFreeSpot(plan, copy, room, f);
+            if (!spot) {
+              setNotice("Im Raum ist kein freier Platz für eine Kopie.");
+              return;
+            }
+            setNotice(undefined);
+            [copy.x, copy.y] = spot;
             setPlan({ ...plan, furniture: [...plan.furniture, copy] });
             props.onSelect({ kind: "furniture", id: copy.id });
           }}
@@ -326,7 +375,12 @@ export function FurniturePanel(props: StoreProps & { f: Furniture; onSelect: (s:
           Löschen (Entf)
         </button>
       </div>
-      <p className="muted small">Im 2D-Plan oder in 3D ziehen, um es zu verschieben (rastet an Wänden ein). Taste R dreht um 90°. Im 2D-Plan markiert die dicke Linie die Vorderseite.</p>
+      {notice && <p className="warn small">{notice}</p>}
+      <p className="muted small">
+        Im 2D-Plan oder in 3D ziehen, um es zu verschieben: Es rastet an Wänden ein und stoppt genau an Wänden und anderen
+        Möbeln. Pfeiltasten schieben um 1 cm (mit Umschalt 10 cm), R dreht um 90°. Die blauen Maße zeigen den Abstand zur
+        nächsten Wand bzw. zum nächsten Möbel. Im 2D-Plan markiert die dicke Linie die Vorderseite.
+      </p>
     </div>
   );
 }
@@ -374,4 +428,74 @@ export function AreaTable({ plan, selection, onSelect }: { plan: Plan; selection
 function Deviation({ v, limit }: { v?: number; limit: number }) {
   if (v === undefined) return null;
   return <span className={Math.abs(v) > limit ? "warn" : "ok"}>{fmtPercent(v)}</span>;
+}
+
+// ---------------------------------------------------------------- Wand
+
+/**
+ * Teilstücke derselben Wand zwischen denselben zwei Räumen (Wände sind an T-Stößen geteilt).
+ * Beim Entfernen nimmt man die ganze Wand zwischen zwei Räumen heraus, nicht nur ein Stück.
+ */
+export function wallRun(plan: Plan, wallId: string): string[] {
+  const target = plan.walls.find((w) => w.id === wallId);
+  if (!target) return [];
+  const g = wallGeometry(plan, target);
+  const key = (s: Record<string, string | undefined>) => [s.left ?? "", s.right ?? ""].sort().join("|");
+  const pair = key(wallSideRooms(plan, g));
+  return plan.walls
+    .filter((w) => {
+      const g2 = wallGeometry(plan, w);
+      const cross = g.dir[0] * g2.dir[1] - g.dir[1] * g2.dir[0];
+      const off = (g2.start[0] - g.start[0]) * g.normal[0] + (g2.start[1] - g.start[1]) * g.normal[1];
+      return Math.abs(cross) < 1e-6 && Math.abs(off) < 1e-3 && w.kind === target.kind && key(wallSideRooms(plan, g2)) === pair;
+    })
+    .map((w) => w.id);
+}
+
+export function setWallsRemoved(plan: Plan, wallId: string, removed: boolean): Plan {
+  const ids = new Set(wallRun(plan, wallId));
+  return { ...plan, walls: plan.walls.map((w) => (ids.has(w.id) ? { ...w, removed: removed || undefined } : w)) };
+}
+
+export function WallPanel(props: StoreProps & { wallId: string; onSelect: (s: Selection) => void }) {
+  const { plan, setPlan } = props;
+  const wall = plan.walls.find((w) => w.id === props.wallId);
+  if (!wall) return null;
+  const run = wallRun(plan, wall.id);
+  const length = run.reduce((s, id) => s + wallGeometry(plan, plan.walls.find((w) => w.id === id)!).length, 0);
+  const sides = wallSideRooms(plan, wallGeometry(plan, wall));
+  const name = (id?: string) => (id ? plan.rooms.find((r) => r.id === id)?.name ?? id : "außen");
+  const doors = plan.openings.filter((o) => run.includes(o.wall));
+  return (
+    <div className="panel">
+      <h2>{wall.kind === "exterior" ? "Außenwand" : "Innenwand"}</h2>
+      <p>
+        zwischen <strong>{name(sides.left)}</strong> und <strong>{name(sides.right)}</strong>
+        <br />
+        <span className="muted small">
+          Länge ca. {length.toLocaleString("de-DE", { maximumFractionDigits: 2 })} m · Stärke {Math.round(wall.thickness * 100)} cm
+          {doors.length > 0 && ` · ${doors.length} Öffnung${doors.length > 1 ? "en" : ""}`}
+        </span>
+      </p>
+      {wall.removed ? (
+        <>
+          <p className="muted small">Diese Wand ist in der aktuellen Variante entfernt.</p>
+          <button onClick={() => setPlan(setWallsRemoved(plan, wall.id, false))}>Wand wiederherstellen</button>
+        </>
+      ) : wall.kind === "exterior" ? (
+        <p className="muted small">Außenwände lassen sich nicht entfernen.</p>
+      ) : (
+        <>
+          <button className="danger" onClick={() => setPlan(setWallsRemoved(plan, wall.id, true))}>Wand entfernen (Entf)</button>
+          <p className="muted small">
+            Gilt nur für die aktuelle Variante, der Grundriss bleibt unverändert. So lassen sich z. B. „Küche offen“ und „Küche
+            mit Wand“ vergleichen. Entfernte Wände sind im Modus „Wände“ gestrichelt zu sehen und lassen sich dort wiederherstellen.
+          </p>
+          <p className="muted small">
+            Hinweis: Ob eine Wand in Wirklichkeit entfernt werden darf (tragende Wand?), muss vorher ein Statiker prüfen.
+          </p>
+        </>
+      )}
+    </div>
+  );
 }

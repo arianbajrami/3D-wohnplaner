@@ -66,3 +66,63 @@ test("Grundriss, Einrichten, Speichern, Vergleich und 3D", async ({ page, reques
 
   expect(errors).toEqual([]);
 });
+
+test("Maße tippen, bündig duplizieren, nicht überlappen, Wand entfernen, Klavier", async ({ page }) => {
+  const errors = trackErrors(page);
+  const furniture = () => page.evaluate(() => JSON.parse(localStorage.getItem("wohnplaner:draft:1og")!).plan.furniture);
+  await page.goto("/");
+  await page.getByPlaceholder("anderer Name").fill(PERSON);
+  await page.getByRole("button", { name: "OK" }).click();
+
+  // Nur die Küche (Zimmer 19,7) zeigen
+  await page.locator("label", { hasText: "Ansicht" }).locator("select").selectOption("room:r-ost-3");
+  await page.locator("tr", { hasText: "Zimmer 19,7" }).click();
+  await page.locator(".tabs-small button", { hasText: "Küche" }).click();
+  await page.locator(".catalog button", { hasText: "Küchenzeile" }).click();
+
+  // Maß frei eintippen – auch die erste Ziffer lässt sich löschen
+  const width = page.locator("label.field", { hasText: "Breite" }).locator("input");
+  await width.click();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Delete");
+  expect((await furniture())[0].width).toBeCloseTo(0.4, 6);
+  await width.fill("");
+  await page.keyboard.type("120");
+  await page.keyboard.press("Enter");
+  expect((await furniture())[0].width).toBeCloseTo(1.2, 6);
+
+  // Duplizieren legt die Kopie bündig daneben, im selben Raum
+  await page.getByRole("button", { name: "Duplizieren" }).click();
+  const [a, b] = await furniture();
+  expect(Math.abs(b.x - a.x) + Math.abs(b.y - a.y)).toBeCloseTo(1.2, 6);
+  await expect(page.locator("g.furniture")).toHaveCount(2);
+
+  // Kopie auf das Original ziehen → stoppt genau beim Berühren, keine Überschneidung
+  const sel = await page.locator("g.furniture.selected").boundingBox();
+  const other = await page.locator("g.furniture:not(.selected)").boundingBox();
+  await page.mouse.move(sel!.x + sel!.width / 2, sel!.y + sel!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(other!.x + other!.width / 2, other!.y + other!.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await expect(page.locator("g.furniture.colliding")).toHaveCount(0);
+  await expect(page.locator(".clearance text", { hasText: "bündig" })).toHaveCount(1);
+
+  // Klavier aus dem Katalog
+  await page.keyboard.press("Escape");
+  await page.locator("tr", { hasText: "Zimmer 19,7" }).click();
+  await page.locator(".tabs-small button", { hasText: "Musik" }).click();
+  await page.locator(".catalog button", { hasText: /^Klavier$/ }).click();
+  expect((await furniture()).some((f: { type: string }) => f.type === "klavier")).toBe(true);
+
+  // Wand zwischen Zimmer 14,7 und 19,7 entfernen (nur in dieser Variante) und wiederherstellen
+  await page.locator("label", { hasText: "Ansicht" }).locator("select").selectOption("apt:ost");
+  await page.locator(".toolbar button", { hasText: "Wände" }).click();
+  await page.locator('polygon[data-wall="iw-2"]').click({ force: true });
+  await page.getByRole("button", { name: "Wand entfernen (Entf)" }).click();
+  await expect(page.locator('polygon[data-wall="iw-2"]')).toHaveCount(0);
+  await page.locator("polygon.wall-removed").first().click({ force: true });
+  await page.getByRole("button", { name: "Wand wiederherstellen" }).click();
+  await expect(page.locator('polygon[data-wall="iw-2"]')).toHaveCount(1);
+
+  expect(errors).toEqual([]);
+});

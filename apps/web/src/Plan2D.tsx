@@ -1,5 +1,11 @@
 import {
   bounds,
+  clearance,
+  furnitureBox,
+  furnitureDirections,
+  obstaclesFor,
+  overlap,
+  wallSideRooms,
   homography,
   multiply,
   pointInPolygon,
@@ -22,8 +28,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { FURNITURE_BY_ID, furnitureParts, ROLES } from "./catalog/furniture";
 import { resolveFinish } from "./catalog/materials";
 import { apartmentColor, fmtArea } from "./format";
-import { isFurniture, isRoom, type Selection } from "./selection";
-import { dragTarget } from "./snap";
+import { isFurniture, isRoom, isWall, type Selection } from "./selection";
+import { placeFurniture } from "./snap";
 
 export type EditMode = "furnish" | "walls" | "rooms" | "photo";
 
@@ -71,6 +77,42 @@ export function Plan2D(props: Props) {
   const furniture = plan.furniture.filter(
     (f) => rooms.length === plan.rooms.length || rooms.some((r) => r.polygons.some((p) => pointInPolygon([f.x, f.y], p))),
   );
+  // Ist ein einzelner Raum geöffnet, bleiben alle Möbel darin
+  const focusRoom = focus.startsWith("room:") ? plan.rooms.find((r) => r.id === focus.slice(5)) : undefined;
+
+  // Entfernte Wände (nur in dieser Variante): Boden läuft durch, im Modus „Wände“ gestrichelt sichtbar
+  const removed = useMemo(
+    () =>
+      plan.walls
+        .filter((w) => w.removed)
+        .map((w) => {
+          const g = wallGeometry(plan, w);
+          const sides = wallSideRooms(plan, g);
+          const room = plan.rooms.find((r) => r.id === (sides.left ?? sides.right));
+          return { g, room, visible: [sides.left, sides.right].some((id) => id && vis.rooms.has(id)) };
+        })
+        .filter((x) => x.visible),
+    [plan, vis],
+  );
+
+  // Möbel, die sich mit Wänden oder anderen Möbeln überschneiden (z. B. nach Größenänderung)
+  const colliding = useMemo(() => {
+    const out = new Set<string>();
+    for (const f of furniture) if (obstaclesFor(plan, f).some((o) => overlap(furnitureBox(f), o))) out.add(f.id);
+    return out;
+  }, [plan, furniture]);
+
+  // Abstände des gewählten Möbels zur nächsten Wand bzw. zum nächsten Möbel
+  const selectedFurniture = selection?.kind === "furniture" ? plan.furniture.find((f) => f.id === selection.id) : undefined;
+  const clearances = useMemo(() => {
+    if (!selectedFurniture || mode !== "furnish") return [];
+    const obstacles = obstaclesFor(plan, selectedFurniture);
+    const box = furnitureBox(selectedFurniture);
+    return furnitureDirections(selectedFurniture).flatMap(({ key, dir }) => {
+      const c = clearance(box, dir, obstacles, 6);
+      return c ? [{ key, ...c }] : [];
+    });
+  }, [plan, selectedFurniture, mode]);
 
   // Größe des Zeichenbereichs verfolgen
   useLayoutEffect(() => {
@@ -154,7 +196,7 @@ export function Plan2D(props: Props) {
     if (d.kind === "furniture") {
       const f = plan.furniture.find((x) => x.id === d.id);
       if (!f) return;
-      const [x, y] = dragTarget(plan, geoms, f, m[0] - d.dx, m[1] - d.dy, (SNAP_PX * 2) / view.s);
+      const [x, y] = placeFurniture(plan, geoms, f, m[0] - d.dx, m[1] - d.dy, (SNAP_PX * 2) / view.s, focusRoom);
       setPlan({ ...plan, furniture: plan.furniture.map((q) => (q.id === d.id ? { ...q, x, y } : q)) }, false);
     } else if (d.kind === "node") {
       const others = plan.nodes.filter((n) => n.id !== d.id).map((n) => [n.x, n.y] as Point);
@@ -273,10 +315,44 @@ export function Plan2D(props: Props) {
             );
           })}
 
-          {/* Wände mit Öffnungen */}
-          {geoms.map((g) => (
-            <polygon key={g.wall.id} points={pts(wallOutline(g))} className={`wall wall-${g.wall.kind}`} />
+          {/* Boden unter entfernten Wänden */}
+          {removed.map(({ g, room }) => (
+            <polygon
+              key={`floor-${g.wall.id}`}
+              points={pts(wallOutline(g))}
+              fill={room?.finishes?.floor ? resolveFinish(room.finishes.floor).color : apartmentColor(room?.apartment)}
+              fillOpacity={props.showPhoto ? 0.4 : room?.finishes?.floor ? 0.85 : 0.55}
+            />
           ))}
+
+          {/* Wände mit Öffnungen; im Modus „Wände“ anklickbar (zum Entfernen) */}
+          {geoms.map((g) => (
+            <polygon
+              key={g.wall.id}
+              data-wall={g.wall.id}
+              points={pts(wallOutline(g))}
+              className={`wall wall-${g.wall.kind} ${isWall(selection, g.wall.id) ? "wall-selected" : ""} ${mode === "walls" ? "wall-pickable" : ""}`}
+              onPointerDown={(e) => {
+                if (mode !== "walls") return;
+                e.stopPropagation();
+                props.onSelect({ kind: "wall", id: g.wall.id });
+              }}
+            />
+          ))}
+          {mode === "walls" &&
+            removed.map(({ g }) => (
+              <polygon
+                key={`removed-${g.wall.id}`}
+                points={pts(wallOutline(g))}
+                className={`wall-removed ${isWall(selection, g.wall.id) ? "wall-selected" : ""}`}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  props.onSelect({ kind: "wall", id: g.wall.id });
+                }}
+              >
+                <title>entfernte Wand – anklicken zum Wiederherstellen</title>
+              </polygon>
+            ))}
           {geoms.flatMap((g) => wallOpenings(plan, g.wall.id).map((o) => <OpeningMark key={o.id} g={g} o={o} px={px} />))}
 
           {/* Möbel */}
@@ -286,6 +362,7 @@ export function Plan2D(props: Props) {
               f={f}
               px={px}
               selected={isFurniture(selection, f.id)}
+              colliding={colliding.has(f.id)}
               interactive={mode === "furnish"}
               onPointerDown={(e) => {
                 if (mode !== "furnish") return;
@@ -295,6 +372,26 @@ export function Plan2D(props: Props) {
               }}
             />
           ))}
+
+          {/* Abstände des gewählten Möbels */}
+          {clearances.map((c) => {
+            const mx = (c.from[0] + c.to[0]) / 2, my = (c.from[1] + c.to[1]) / 2;
+            const vertical = Math.abs(c.to[1] - c.from[1]) > Math.abs(c.to[0] - c.from[0]);
+            return (
+              <g key={c.key} className={`clearance ${c.distance < 0.005 ? "touching" : ""}`}>
+                <line x1={c.from[0]} y1={c.from[1]} x2={c.to[0]} y2={c.to[1]} />
+                <circle cx={c.to[0]} cy={c.to[1]} r={2.5 * px} />
+                <text
+                  x={mx + (vertical ? 6 * px : 0)}
+                  y={my + (vertical ? 4 * px : -5 * px)}
+                  fontSize={12 * px}
+                  textAnchor={vertical ? "start" : "middle"}
+                >
+                  {c.distance < 0.005 ? "bündig" : `${Math.round(c.distance * 100)} cm`}
+                </text>
+              </g>
+            );
+          })}
 
           {/* Raumbeschriftung */}
           {showRoomLabels &&
@@ -357,6 +454,7 @@ function FurnitureMark(props: {
   f: Furniture;
   px: number;
   selected: boolean;
+  colliding: boolean;
   interactive: boolean;
   onPointerDown: (e: React.PointerEvent) => void;
 }) {
@@ -371,7 +469,7 @@ function FurnitureMark(props: {
   return (
     <g
       transform={`translate(${f.x},${f.y}) rotate(${f.rotation})`}
-      className={`furniture ${props.interactive ? "interactive" : ""} ${props.selected ? "selected" : ""}`}
+      className={`furniture ${props.interactive ? "interactive" : ""} ${props.selected ? "selected" : ""} ${props.colliding ? "colliding" : ""}`}
       onPointerDown={props.onPointerDown}
     >
       {parts.map((p, i) => (

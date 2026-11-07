@@ -23,7 +23,7 @@ export const Variant = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   rooms: z.record(z.string(), z.object({ finishes: Room.shape.finishes })).default({}),
-  walls: z.record(z.string(), z.object({ finishes: Wall.shape.finishes })).default({}),
+  walls: z.record(z.string(), z.object({ finishes: Wall.shape.finishes, removed: z.boolean().optional() })).default({}),
   furniture: z.array(Furniture).default([]),
 });
 export type Variant = z.infer<typeof Variant>;
@@ -33,7 +33,7 @@ export function stripDesign(plan: Plan): Plan {
   return {
     ...plan,
     rooms: plan.rooms.map(({ finishes: _f, ...r }) => r),
-    walls: plan.walls.map(({ finishes: _f, ...w }) => w),
+    walls: plan.walls.map(({ finishes: _f, removed: _r, ...w }) => w),
     furniture: [],
   };
 }
@@ -44,7 +44,11 @@ export function applyVariant(base: Plan, v: Pick<Variant, "rooms" | "walls" | "f
   return {
     ...plain,
     rooms: plain.rooms.map((r) => (v.rooms[r.id]?.finishes ? { ...r, finishes: v.rooms[r.id]!.finishes } : r)),
-    walls: plain.walls.map((w) => (v.walls[w.id]?.finishes ? { ...w, finishes: v.walls[w.id]!.finishes } : w)),
+    walls: plain.walls.map((w) => {
+      const d = v.walls[w.id];
+      if (!d) return w;
+      return { ...w, ...(d.finishes ? { finishes: d.finishes } : {}), ...(d.removed ? { removed: true } : {}) };
+    }),
     furniture: v.furniture,
   };
 }
@@ -54,7 +58,10 @@ export function extractDesign(plan: Plan): Pick<Variant, "rooms" | "walls" | "fu
   const rooms: Variant["rooms"] = {};
   for (const r of plan.rooms) if (r.finishes && Object.values(r.finishes).some(Boolean)) rooms[r.id] = { finishes: r.finishes };
   const walls: Variant["walls"] = {};
-  for (const w of plan.walls) if (w.finishes && Object.values(w.finishes).some(Boolean)) walls[w.id] = { finishes: w.finishes };
+  for (const w of plan.walls) {
+    const painted = w.finishes && Object.values(w.finishes).some(Boolean);
+    if (painted || w.removed) walls[w.id] = { finishes: painted ? w.finishes : undefined, ...(w.removed ? { removed: true } : {}) };
+  }
   return { rooms, walls, furniture: plan.furniture };
 }
 
@@ -92,6 +99,8 @@ export interface RoomDiff {
   style: [string | undefined, string | undefined];
   furniture: [string[], string[]];
   accentWalls: [number, number];
+  /** entfernte Wände, die an den Raum grenzen */
+  removedWalls: [number, number];
   differs: boolean;
 }
 
@@ -105,6 +114,12 @@ export function compareDesigns(base: Plan, a: Plan, b: Plan): RoomDiff[] {
       const sides = wallSideRooms(p, wallGeometry(p, w));
       return (w.finishes.left && sides.left === roomId) || (w.finishes.right && sides.right === roomId);
     }).length;
+  const removedCount = (p: Plan, roomId: string) =>
+    p.walls.filter((w) => {
+      if (!w.removed) return false;
+      const sides = wallSideRooms(p, wallGeometry(p, w));
+      return sides.left === roomId || sides.right === roomId;
+    }).length;
   return base.rooms.map((r) => {
     const ra = a.rooms.find((x) => x.id === r.id), rb = b.rooms.find((x) => x.id === r.id);
     const fa = a.furniture.filter((f) => roomOf(a, f.x, f.y) === r.id).map((f) => f.type).sort();
@@ -117,12 +132,14 @@ export function compareDesigns(base: Plan, a: Plan, b: Plan): RoomDiff[] {
       style: [ra?.finishes?.style, rb?.finishes?.style],
       furniture: [fa, fb],
       accentWalls: [sideRoomsCount(a, r.id), sideRoomsCount(b, r.id)],
+      removedWalls: [removedCount(a, r.id), removedCount(b, r.id)],
       differs: false,
     };
     const fur = (l: string[], m: string[]) =>
       JSON.stringify(l) !== JSON.stringify(m) ||
       stableJson(a.furniture.filter((f) => roomOf(a, f.x, f.y) === r.id)) !== stableJson(b.furniture.filter((f) => roomOf(b, f.x, f.y) === r.id));
-    d.differs = d.floor[0] !== d.floor[1] || d.walls[0] !== d.walls[1] || d.accentWalls[0] !== d.accentWalls[1] || fur(fa, fb);
+    d.differs =
+      d.floor[0] !== d.floor[1] || d.walls[0] !== d.walls[1] || d.accentWalls[0] !== d.accentWalls[1] || d.removedWalls[0] !== d.removedWalls[1] || fur(fa, fb);
     return d;
   });
 }
