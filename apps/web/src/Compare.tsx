@@ -99,6 +99,11 @@ export function Compare(props: {
                 <td>
                   <Pair a={d.walls[0]} b={d.walls[1]} finish />
                   {(d.accentWalls[0] || d.accentWalls[1]) > 0 && <div className="muted small">Akzentwände: A {d.accentWalls[0]} · B {d.accentWalls[1]}</div>}
+                  {(d.removedWalls[0] || d.removedWalls[1]) > 0 && (
+                    <div className={d.removedWalls[0] !== d.removedWalls[1] ? "small" : "muted small"}>
+                      Entfernte Wände: A {d.removedWalls[0]} · B {d.removedWalls[1]}
+                    </div>
+                  )}
                 </td>
                 <td><Pair a={furnitureList(d.furniture[0])} b={furnitureList(d.furniture[1])} /></td>
               </tr>

@@ -1,8 +1,8 @@
 import { useFrame, useThree } from "@react-three/fiber";
-import type { Furniture, Plan, WallGeometry } from "@wohnplaner/model";
+import type { Furniture, Plan, Room, WallGeometry } from "@wohnplaner/model";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { dragTarget } from "./snap";
+import { placeFurniture } from "./snap";
 
 // ---------------------------------------------------------------- Möbel in 3D ziehen
 
@@ -29,6 +29,8 @@ export function FurnitureDragger(props: {
   plan: Plan;
   geoms: WallGeometry[];
   setPlan: (p: Plan, withCheckpoint?: boolean) => void;
+  /** geöffneter Raum: Möbel bleiben darin */
+  room?: Room;
 }) {
   const { camera, gl, controls } = useThree();
   const latest = useRef(props);
@@ -49,10 +51,10 @@ export function FurnitureDragger(props: {
       ray.setFromCamera(ndc, camera);
       const hit = floorHit(ray.ray);
       if (!hit) return;
-      const { plan, geoms, setPlan } = latest.current;
+      const { plan, geoms, setPlan, room } = latest.current;
       const f = plan.furniture.find((x) => x.id === d.id);
       if (!f) return;
-      const [x, y] = dragTarget(plan, geoms, f, hit.x - d.dx, hit.z - d.dz, 0.15);
+      const [x, y] = placeFurniture(plan, geoms, f, hit.x - d.dx, hit.z - d.dz, 0.15, room);
       setPlan({ ...plan, furniture: plan.furniture.map((q) => (q.id === d.id ? { ...q, x, y } : q)) }, false);
     };
     const up = (e: PointerEvent) => {

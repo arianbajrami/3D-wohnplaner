@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
-import { storagePlugin } from "./storage-plugin";
+import { storagePlugin } from "./storage-plugin.ts";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 

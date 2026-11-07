@@ -192,9 +192,15 @@ Warum ein gemeinsamer Branch mit Ordnern pro Person statt zwei Branches: siehe
 
 - **Ansicht:** ganzes Geschoss, eine Wohnung oder ein einzelner Raum. Doppelklick auf einen Raum zeigt nur
   diesen. Alles andere wird ausgeblendet, auch das Treppenhaus.
-- **Einrichten:** Raum anklicken, dann im Katalog Möbel hinzufügen (Wohnen, Essen, Küche, Schlafen, Bad,
+- **Einrichten:** Raum anklicken, dann im Katalog Möbel hinzufügen (Wohnen, Musik mit Klavier und Flügel, Essen, Küche, Schlafen, Bad,
   Arbeiten). Im 2D-Plan oder in 3D verschieben, Möbel rasten an Wänden ein. Taste R dreht, Entf löscht. Maße in cm und
   alle Oberflächen (Fronten, Arbeitsplatte, Bezug, Holz …) sind pro Möbel einstellbar.
+- **Genau platzieren:** Möbel lassen sich nicht in Wände oder andere Möbel schieben. Sie stoppen genau beim
+  Berühren, Ober- über Unterschränken und Möbel auf Teppichen sind aber erlaubt. Blaue Maßlinien zeigen den
+  Abstand zur nächsten Wand bzw. zum nächsten Möbel in cm. Pfeiltasten schieben um 1 cm (mit Umschalt 10 cm).
+  Ist ein einzelner Raum geöffnet, bleibt alles in diesem Raum. „Duplizieren“ legt die Kopie bündig daneben.
+- **Wände entfernen:** Im Modus „Wände“ eine Wand anklicken und entfernen. Das gilt nur für die aktuelle
+  Variante, z. B. „Küche offen“ gegen „Küche mit Wand“ vergleichen. Der Boden läuft dann durch.
 - **Gestalten:** Boden je Raum (Holz hell/dunkel, Fliesen, Stein, Teppich), Wandfarbe je Raum (RAL oder
   eigene Farbe), einzelne Akzentwände in 3D mit „Wand streichen“.
 - **Stilvorlagen:** Landhaus, Skandinavisch, Modern und Industrial setzen Wände, Boden und alle
@@ -216,6 +222,22 @@ npm test
 ```bash
 npm run typecheck
 ```
+
+```bash
+npm run e2e
+```
+
+`npm run e2e` startet die App selbst und klickt sie im Browser einmal durch (Playwright). Beim ersten Mal
+vorher die Browser installieren mit `npx playwright install chromium` (im Ordner `apps/web`).
+
+**CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Push auf `main` und bei jedem
+Pull Request:
+
+- **Typen, Tests, Build:** Typecheck, Unit-Tests und Produktions-Build. Die Tests prüfen auch alle Dateien
+  in `plans/` und `designs/`. Eine kaputte oder falsch abgelegte Variante, z. B. nach „Synchronisieren“, fällt
+  also sofort auf.
+- **End-to-End:** Die App wird im Browser durchgespielt: Raum gestalten, Möbel hinzufügen, Variante
+  speichern, Wohnung isolieren, vergleichen, 3D und Begehen.
 
 ## Struktur
 

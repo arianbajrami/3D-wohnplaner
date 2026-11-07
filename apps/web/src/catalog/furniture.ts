@@ -8,7 +8,7 @@ import type { Use } from "./materials";
 
 export type Role =
   | "fabric" | "legs" | "wood" | "front" | "worktop" | "plinth" | "ceramic" | "metal"
-  | "glass" | "appliance" | "mattress" | "frame" | "pillow" | "cooktop" | "plant";
+  | "glass" | "appliance" | "mattress" | "frame" | "pillow" | "cooktop" | "plant" | "lacquer" | "keys";
 
 export interface RoleInfo {
   label: string;
@@ -35,6 +35,9 @@ export const ROLES: Record<Role, RoleInfo> = {
   pillow: { label: "Kissen", default: "#fbfaf6", use: "fabric", paint: true },
   cooktop: { label: "Kochfeld", default: "#151515", use: "metal", paint: false },
   plant: { label: "Pflanze", default: "#4f7a3e", use: "fabric", paint: true },
+  // eigene Rollen fürs Klavier, damit Stilvorlagen (die „Holz“ umfärben) es schwarz lassen
+  lacquer: { label: "Gehäuse", default: "#141414", use: "wood", paint: true },
+  keys: { label: "Tasten", default: "#f7f5ef", use: "metal", paint: false },
 };
 
 export interface Part {
@@ -138,6 +141,44 @@ export const FURNITURE: FurnitureType[] = [
       box(-w * 0.35, w * 0.35, -d * 0.35, d * 0.35, 0, 0.35, "ceramic", "cylinder"),
       box(-w / 2, w / 2, -d / 2, d / 2, 0.35, h, "plant", "cylinder"),
     ],
+  },
+  // Musik
+  {
+    id: "klavier", name: "Klavier", category: "Musik", w: 1.5, d: 0.6, h: 1.25, roles: ["lacquer", "keys"],
+    parts: ({ w, d, h }) => {
+      const back = -d / 2 + 0.36; // Korpus hinten, Tastatur ragt nach vorne
+      return [
+        box(-w / 2, w / 2, -d / 2, back, 0, h, "lacquer"),
+        box(-w / 2, w / 2, back, back + 0.04, 0.1, 0.68, "lacquer"),
+        box(-w / 2, w / 2, back, d / 2 - 0.02, 0.68, 0.74, "lacquer"),
+        box(-w / 2 + 0.06, w / 2 - 0.06, back + 0.02, d / 2 - 0.05, 0.74, 0.765, "keys"),
+        box(-w / 2, -w / 2 + 0.06, back, d / 2, 0.66, 0.84, "lacquer"),
+        box(w / 2 - 0.06, w / 2, back, d / 2, 0.66, 0.84, "lacquer"),
+        box(-w / 2 + 0.02, -w / 2 + 0.08, d / 2 - 0.1, d / 2, 0, 0.68, "lacquer"),
+        box(w / 2 - 0.08, w / 2 - 0.02, d / 2 - 0.1, d / 2, 0, 0.68, "lacquer"),
+      ];
+    },
+  },
+  {
+    id: "fluegel", name: "Flügel", category: "Musik", w: 1.5, d: 1.75, h: 1.0, roles: ["lacquer", "keys"],
+    parts: ({ w, d, h }) => {
+      const kb = 0.22; // Tastaturbereich vorne
+      return [
+        // Korpus: vorne breit, hinten zum Schweif hin schmaler (vereinfacht in drei Stufen)
+        box(-w / 2, w / 2, -d * 0.15, d / 2 - kb, 0.62, h, "lacquer"),
+        box(-w / 2, w / 2 - w * 0.3, -d * 0.4, -d * 0.15, 0.62, h, "lacquer"),
+        box(-w / 2, w / 2 - w * 0.55, -d / 2, -d * 0.4, 0.62, h, "lacquer"),
+        box(-w / 2, w / 2, d / 2 - kb, d / 2, 0.62, 0.72, "lacquer"),
+        box(-w / 2 + 0.07, w / 2 - 0.07, d / 2 - kb + 0.03, d / 2 - 0.02, 0.72, 0.745, "keys"),
+        box(-w / 2 + 0.05, -w / 2 + 0.15, d / 2 - kb - 0.1, d / 2 - kb, 0, 0.62, "lacquer", "cylinder"),
+        box(w / 2 - 0.15, w / 2 - 0.05, d / 2 - kb - 0.1, d / 2 - kb, 0, 0.62, "lacquer", "cylinder"),
+        box(-w / 2 + 0.1, -w / 2 + 0.2, -d / 2 + 0.1, -d / 2 + 0.2, 0, 0.62, "lacquer", "cylinder"),
+      ];
+    },
+  },
+  {
+    id: "klavierbank", name: "Klavierbank", category: "Musik", w: 0.6, d: 0.35, h: 0.5, roles: ["lacquer", "fabric"],
+    parts: ({ w, d, h }) => [...legs(w, d, h - 0.07, 0.04, 0.02, "lacquer"), box(-w / 2, w / 2, -d / 2, d / 2, h - 0.07, h, "fabric")],
   },
   // Essen
   { id: "esstisch", name: "Esstisch", category: "Essen", w: 1.8, d: 0.9, h: 0.75, roles: ["wood"], parts: (s) => table(s) },

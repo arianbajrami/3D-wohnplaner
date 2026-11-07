@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -78,7 +78,10 @@ function createMiddleware(root: string): Connect.NextHandleFunction {
       return { ok: true };
     }],
     ["DELETE", /^\/api\/designs\/([^/]+)\/([^/]+)\/([^/]+)$/, async (m) => {
-      await rm(path.join(designsDir, slug(m[1]), slug(m[2]), `${slug(m[3])}.json`), { force: true });
+      const personDir = path.join(designsDir, slug(m[1]), slug(m[2]));
+      await rm(path.join(personDir, `${slug(m[3])}.json`), { force: true });
+      // leere Ordner aufräumen (rmdir scheitert absichtlich, wenn noch etwas drin ist)
+      for (const dir of [personDir, path.dirname(personDir), designsDir]) await rmdir(dir).catch(() => undefined);
       return { ok: true };
     }],
 

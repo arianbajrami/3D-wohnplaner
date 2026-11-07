@@ -110,6 +110,11 @@ export function apartmentAreaChecks(plan: Plan): AreaCheck[] {
   });
 }
 
+/** Wände, die in der aktuellen Gestaltung stehen (entfernte Wände nicht mitgezählt). */
+export function activeWalls(plan: Plan) {
+  return plan.walls.filter((w) => !w.removed);
+}
+
 /** Punkt-in-Polygon (Strahlverfahren). */
 export function pointInPolygon([x, y]: Point, poly: readonly Point[]): boolean {
   let inside = false;
@@ -154,14 +159,14 @@ export function wallSideRooms(plan: Plan, g: WallGeometry): Record<WallSide, str
  * Liefert die sichtbaren Räume und Wände (Wände, die an mindestens einen sichtbaren Raum grenzen).
  */
 export function visibility(plan: Plan, focus: string): { rooms: Set<string>; walls: Set<string> } {
-  const all = { rooms: new Set(plan.rooms.map((r) => r.id)), walls: new Set(plan.walls.map((w) => w.id)) };
+  const all = { rooms: new Set(plan.rooms.map((r) => r.id)), walls: new Set(activeWalls(plan).map((w) => w.id)) };
   let rooms: Room[];
   if (focus.startsWith("apt:")) rooms = plan.rooms.filter((r) => r.apartment === focus.slice(4));
   else if (focus.startsWith("room:")) rooms = plan.rooms.filter((r) => r.id === focus.slice(5));
   else return all;
   const roomIds = new Set(rooms.map((r) => r.id));
   const walls = new Set<string>();
-  for (const w of plan.walls) {
+  for (const w of activeWalls(plan)) {
     const sides = wallSideRooms(plan, wallGeometry(plan, w));
     if ((sides.left && roomIds.has(sides.left)) || (sides.right && roomIds.has(sides.right))) walls.add(w.id);
   }

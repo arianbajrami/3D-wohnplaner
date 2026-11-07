@@ -8,6 +8,7 @@ import {
   visibility,
   wallGeometry,
   wallOpenings,
+  wallOutline,
   wallSideRooms,
   type Furniture,
   type Plan,
@@ -99,7 +100,15 @@ export function Scene3D(props: Props) {
       ) : (
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2 - 0.05} />
       )}
-      {props.setPlan && <FurnitureDragger drag={drag} plan={plan} geoms={geoms} setPlan={props.setPlan} />}
+      {props.setPlan && (
+        <FurnitureDragger
+          drag={drag}
+          plan={plan}
+          geoms={geoms}
+          setPlan={props.setPlan}
+          room={focus.startsWith("room:") ? plan.rooms.find((r) => r.id === focus.slice(5)) : undefined}
+        />
+      )}
     </Canvas>
   );
 }
@@ -121,18 +130,26 @@ function CameraRig({ focusKey, cx, cz, span }: { focusKey: string; cx: number; c
 }
 
 function Floors({ plan, selection, onSelect, onFocusRoom, visibleRooms }: Props & { visibleRooms: Set<string> }) {
-  const items = useMemo(
-    () =>
-      plan.rooms
-        .filter((r) => visibleRooms.has(r.id))
-        .map((r) => ({
-          room: r,
-          // Shape liegt in der XY-Ebene; nach Drehung um −90° um X wird (x, −y) zu (x, 0, y).
-          // Die UV-Koordinaten der ShapeGeometry sind damit Meter → Texturen kacheln maßstäblich.
-          geometries: r.polygons.map((poly) => new THREE.ShapeGeometry(new THREE.Shape(poly.map(([x, y]) => new THREE.Vector2(x, -y))))),
-        })),
-    [plan.rooms, visibleRooms],
-  );
+  const items = useMemo(() => {
+    // Unter entfernten Wänden läuft der Boden des angrenzenden Raums durch
+    const patches = new Map<string, [number, number][][]>();
+    for (const w of plan.walls.filter((x) => x.removed)) {
+      const g = wallGeometry(plan, w);
+      const sides = wallSideRooms(plan, g);
+      const id = sides.left ?? sides.right;
+      if (id) patches.set(id, [...(patches.get(id) ?? []), wallOutline(g)]);
+    }
+    return plan.rooms
+      .filter((r) => visibleRooms.has(r.id))
+      .map((r) => ({
+        room: r,
+        // Shape liegt in der XY-Ebene; nach Drehung um −90° um X wird (x, −y) zu (x, 0, y).
+        // Die UV-Koordinaten der ShapeGeometry sind damit Meter → Texturen kacheln maßstäblich.
+        geometries: [...r.polygons, ...(patches.get(r.id) ?? [])].map(
+          (poly) => new THREE.ShapeGeometry(new THREE.Shape(poly.map(([x, y]) => new THREE.Vector2(x, -y)))),
+        ),
+      }));
+  }, [plan, visibleRooms]);
   return (
     <>
       {items.map(({ room, geometries }) =>
@@ -197,7 +214,7 @@ function wallPieces(plan: Plan, g: WallGeometry, height: number): { solid: Piece
 
 const CAP = new THREE.MeshStandardMaterial({ color: "#e4dfd6" });
 
-function Walls({ plan, cutaway, visibleWalls, paint, onPaintWall }: Props & { visibleWalls: Set<string> }) {
+function Walls({ plan, cutaway, visibleWalls, paint, onPaintWall, onSelect, walk }: Props & { visibleWalls: Set<string> }) {
   const items = useMemo(
     () =>
       plan.walls
@@ -221,8 +238,11 @@ function Walls({ plan, cutaway, visibleWalls, paint, onPaintWall }: Props & { vi
   );
 
   const onClick = (wallId: string) => (e: ThreeEvent<MouseEvent>) => {
-    if (!paint) return;
+    // war es ein Ziehen der Ansicht (Maus bewegt), kein Klick
+    if (walk || e.delta > 4) return;
     e.stopPropagation();
+    // ohne Pinsel: Wand auswählen (z. B. zum Entfernen)
+    if (!paint) return onSelect({ kind: "wall", id: wallId });
     const idx = e.face?.materialIndex;
     if (idx === 4) onPaintWall(wallId, "left");
     else if (idx === 5) onPaintWall(wallId, "right");
@@ -338,7 +358,7 @@ function Ceilings({ plan }: { plan: Plan }) {
 
 /** Wandstücke, die bis zum Boden reichen (also keine Tür/kein Durchgang), als Hindernisse */
 function wallBlockers(plan: Plan): Blocker[] {
-  return plan.walls.flatMap((w) => {
+  return plan.walls.filter((w) => !w.removed).flatMap((w) => {
     const g = wallGeometry(plan, w);
     return wallPieces(plan, g, g.height)
       .solid.filter((p) => p.z0 === 0)

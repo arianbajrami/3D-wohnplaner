@@ -5,11 +5,14 @@
     "types": [
       "vite/client",
       "node"
-    ]
+    ],
+    "allowImportingTsExtensions": true
   },
   "include": [
     "src",
+    "e2e",
     "vite.config.ts",
-    "storage-plugin.ts"
+    "storage-plugin.ts",
+    "playwright.config.ts"
   ]
 }
